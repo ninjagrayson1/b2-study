@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>B2 Diskussion · Real-Time Study Group (Teil 2 & Teil 3)</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div class="app-container">
+  <!-- Top App Header -->
+  <header class="app-header">
+    <div class="brand-wrap">
+      <div class="brand-icon">🇩🇪</div>
+      <div>
+        <div class="eyebrow" id="liveEyebrow">GERMAN B2 · SPRECHEN TEIL 2 & TEIL 3</div>
+        <h1 class="title">B2 Diskussion</h1>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <!-- Realtime connection status -->
+      <span class="pill" id="statusPill">
+        <span class="pulse-dot" id="statusDot"></span>
+        <span id="statusText">CONNECTING...</span>
+      </span>
+
+      <!-- Active User Profile Indicator -->
+      <span class="pill" id="activeUserBadge">Loading user...</span>
+
+      <!-- Ring Group Button -->
+      <button class="btn btn-call" onclick="callGroup()" title="Call or Ring Group Members">
+        📢 Ring Group
+      </button>
+
+      <!-- Theme Switcher -->
+      <button class="btn" id="themeBtn" onclick="toggleTheme()">☀️ Light</button>
+    </div>
+  </header>
+
+  <!-- Incoming Alert Banner -->
+  <div id="alertBanner" class="alert-banner" style="display: none;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span style="font-size: 24px;">🔔</span>
+      <div>
+        <strong id="bannerTitle">Study Call!</strong>
+        <p id="bannerMessage" style="font-size: 13px; color: var(--text); margin-top: 2px;"></p>
+      </div>
+    </div>
+    <button class="btn" style="padding: 4px 8px; font-size: 12px;" onclick="document.getElementById('alertBanner').style.display='none'">✕</button>
+  </div>
+
+  <!-- Navigation Bar -->
+  <nav class="nav-bar">
+    <button class="nav-btn active" data-tab="tab-live">🎙️ Live Session</button>
+    <button class="nav-btn" data-tab="tab-topics">📚 All Topics (86)</button>
+    <button class="nav-btn" data-tab="tab-redemittel">💡 Redemittel</button>
+    <button class="nav-btn" data-tab="tab-profiles">👤 Profiles</button>
+    <button class="nav-btn" data-tab="tab-scoreboard">🏆 Scoreboard</button>
+  </nav>
+
+  <!-- ================= TAB 1: LIVE SESSION ================= -->
+  <main id="tab-live" class="tab-pane">
+    <div class="grid-2col">
+      <!-- Left Column: Controls, Timer & Roles -->
+      <aside>
+        <!-- Roles Assignment Box with User Avatars -->
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 style="font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); font-weight: 800;">Assigned Pair</h2>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 11px; color: var(--text-muted);">ROOM:</span>
+              <input type="text" id="roomCodeInput" value="B2-STUDY" style="width: 85px; font-size: 12px; font-weight: 800; padding: 2px 6px; background: var(--panel-card); border: 1px solid var(--line); border-radius: 6px; text-align: center;">
+            </div>
+          </div>
+
+          <div class="roles-grid">
+            <!-- Role A Card with Avatar -->
+            <div class="role-box" id="roleABox">
+              <div class="role-tag">
+                <span id="roleATag">A · STARTS</span>
+                <span class="me-badge" id="roleAMe" style="display: none;">YOU</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                <div id="roleAAvatar"></div>
+                <strong class="role-name" id="roleAName" style="margin-top: 0;">Grayson</strong>
+              </div>
+            </div>
+
+            <!-- Role B Card with Avatar -->
+            <div class="role-box" id="roleBBox">
+              <div class="role-tag">
+                <span id="roleBTag">B · PARTNER</span>
+                <span class="me-badge" id="roleBMe" style="display: none;">YOU</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                <div id="roleBAvatar"></div>
+                <strong class="role-name" id="roleBName" style="margin-top: 0;">&mdash;</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Role Switching Buttons -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 14px;">
+            <button class="btn" style="padding: 6px 4px; font-size: 11px;" onclick="swapRoles()">⇄ Swap</button>
+            <button class="btn" style="padding: 6px 4px; font-size: 11px;" onclick="changePartner()">👥 Partner</button>
+            <button class="btn" style="padding: 6px 4px; font-size: 11px;" onclick="changeBothRoles()">🎲 New Pair</button>
+          </div>
+
+          <!-- 5-Minute Timer -->
+          <div class="timer-card">
+            <div id="timerTitle" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); font-weight: 800;">5-Minute Discussion Timer</div>
+            <div class="timer-digits" id="timerDigits">05:00</div>
+            <div class="timer-actions">
+              <button class="btn btn-primary" id="timerPlayBtn" onclick="startTimer()">▶ Start</button>
+              <button class="btn" onclick="resetTimer()">↺ Reset</button>
+            </div>
+          </div>
+
+          <!-- Exam Section Mode Selector for Randomizer -->
+          <div style="margin-bottom: 12px;">
+            <div style="font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Randomize Section:</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;">
+              <button class="btn" id="modeBtnAll" style="padding: 6px 4px; font-size: 11px; background: var(--accent); color: #fff;" onclick="setExamSection('ALL')">All</button>
+              <button class="btn" id="modeBtnT2" style="padding: 6px 4px; font-size: 11px;" onclick="setExamSection('2')">Teil 2</button>
+              <button class="btn" id="modeBtnT3" style="padding: 6px 4px; font-size: 11px;" onclick="setExamSection('3')">Teil 3</button>
+            </div>
+          </div>
+
+          <!-- Primary Randomize Button (For Admin) -->
+          <div id="adminControls">
+            <button class="btn btn-primary btn-lg" onclick="randomize()">
+              🎲 Smart Randomize
+            </button>
+            <p style="font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 6px;">
+              Picks an unworked topic, assigns roles, and broadcasts live.
+            </p>
+          </div>
+
+          <!-- Member live watching message -->
+          <div id="memberNote" style="display: none; text-align: center; padding: 12px; background: var(--panel-card); border-radius: 12px; border: 1px solid var(--line);">
+            <div style="font-size: 13px; font-weight: 700; color: var(--accent2);">👀 Following Admin Live</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+              Your screen updates automatically in real-time when the Admin randomizes.
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Right Column: Exercise Topic & Translations -->
+      <section>
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span id="topicTeilBadge" class="pill" style="font-size: 11px; font-weight: 800;">Teil 3</span>
+                <span id="topicWorkedBadge" class="pill" style="color: var(--good); border-color: var(--good); display: none;">✓ Worked</span>
+              </div>
+              <h2 id="topicTitle" style="font-size: clamp(20px, 3vw, 28px); font-weight: 850; margin-top: 6px;">3-tägige Fahrradtour</h2>
+            </div>
+            <button class="btn" onclick="copyExercise()" title="Copy text">📋 Copy</button>
+          </div>
+
+          <!-- Audio, Voice and Action Controls -->
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;">
+            <button class="btn btn-primary" id="ttsBtn" onclick="readGermanText()">🔊 Read German</button>
+            <button class="btn" onclick="stopSpeech()">⏹ Stop Voice</button>
+            <button class="btn" onclick="markWorked()">✓ Mark Worked</button>
+            <button class="btn" onclick="highlightSelectedText()" title="Select text with mouse then click to highlight">🖐️ Highlight</button>
+          </div>
+
+          <!-- German Exercise Text -->
+          <div class="exercise-box" id="exerciseText"></div>
+
+          <!-- Arabic Translation Box -->
+          <div class="arabic-box">
+            <div style="font-size: 11px; color: var(--accent2); margin-bottom: 4px; font-weight: 700;">الترجمة والملخص بالعربية · Arabic Summary:</div>
+            <div id="arabicText"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ================= TAB 2: ALL TOPICS ================= -->
+  <section id="tab-topics" class="tab-pane" style="display: none;">
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 14px;">
+        <h2 style="font-size: 20px;">All B2 Topics (Teil 2 & Teil 3)</h2>
+        <div style="display: flex; gap: 8px;">
+          <span class="pill" id="countPill">86 Topics</span>
+          <span class="pill" id="usedPill">0 Worked</span>
+        </div>
+      </div>
+
+      <!-- Search and filter -->
+      <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;">
+        <input type="text" id="topicSearch" class="form-input" style="flex: 1; min-width: 200px;" placeholder="Search topic by name or keyword...">
+        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+          <button class="btn filter-btn active" data-filter="all">All (86)</button>
+          <button class="btn filter-btn" data-filter="teil2">🎤 Teil 2 (40)</button>
+          <button class="btn filter-btn" data-filter="teil3">🤝 Teil 3 (46)</button>
+          <button class="btn filter-btn" data-filter="unworked">Unworked</button>
+          <button class="btn filter-btn" data-filter="worked">Worked</button>
+        </div>
+      </div>
+
+      <!-- Topics Grid -->
+      <div class="topics-grid" id="topicsList"></div>
+    </div>
+  </section>
+
+  <!-- ================= TAB 3: REDEMITTEL ================= -->
+  <section id="tab-redemittel" class="tab-pane" style="display: none;">
+    <div class="card" style="margin-bottom: 16px; background: rgba(124, 92, 255, 0.08); border-color: var(--accent);">
+      <h2 style="font-size: 18px; margin-bottom: 4px;">💡 B2 Redemittel & Phrases</h2>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 10px;">
+        Universal phrases for both <b>Teil 2 (Thema präsentieren)</b> and <b>Teil 3 (Gemeinsam planen)</b>. Click 🔊 to hear pronunciation, or 📋 to copy.
+      </p>
+
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn" id="rmBtnAll" style="padding: 6px 12px; font-size: 12px; background: var(--accent); color: #fff;" onclick="filterRedemittel('all')">All Phrases</button>
+        <button class="btn" id="rmBtnT2" style="padding: 6px 12px; font-size: 12px;" onclick="filterRedemittel('t2')">🎤 Teil 2: Präsentation</button>
+        <button class="btn" id="rmBtnT3" style="padding: 6px 12px; font-size: 12px;" onclick="filterRedemittel('t3')">🤝 Teil 3: Planung</button>
+      </div>
+    </div>
+
+    <div id="redemittelList"></div>
+  </section>
+
+  <!-- ================= TAB 4: PROFILES ================= -->
+  <section id="tab-profiles" class="tab-pane" style="display: none;">
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div>
+          <h2 style="font-size: 20px;">Study Group Profiles</h2>
+          <p style="font-size: 13px; color: var(--text-muted);">Create custom avatars or upload photos for each group member.</p>
+        </div>
+      </div>
+
+      <!-- Add New Member Form with Avatar Selection & Upload -->
+      <div style="background: var(--panel-card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-bottom: 20px;">
+        <h3 style="font-size: 15px; margin-bottom: 12px;">+ Add or Customize Profile</h3>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+          <div>
+            <label style="font-size: 12px; font-weight: 700; color: var(--text-muted);">Friend's Name:</label>
+            <input type="text" id="newProfileName" class="form-input" placeholder="Friend's name">
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 700; color: var(--text-muted);">Role:</label>
+            <select id="newProfileRole" class="form-input">
+              <option value="MEMBER">Member (Participant)</option>
+              <option value="ADMIN">Admin (Room Leader)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <label style="font-size: 12px; font-weight: 700; color: var(--text-muted);">Short Bio / Study Goal:</label>
+          <input type="text" id="newProfileBio" class="form-input" placeholder="e.g. Aiming for B2 90%+ in Speaking">
+        </div>
+
+        <!-- Avatar Choice: Emoji or Photo Upload -->
+        <div style="margin-bottom: 14px;">
+          <label style="font-size: 12px; font-weight: 700; color: var(--text-muted); display: block; margin-bottom: 4px;">Choose Avatar Emoji or Upload Custom Photo:</label>
+
+          <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <!-- Current preview -->
+            <div id="newAvatarPreview" class="avatar-badge-emoji" style="width: 46px; height: 46px; font-size: 26px;">🎓</div>
+
+            <!-- Upload Photo Button -->
+            <label class="btn" style="cursor: pointer; padding: 8px 14px; font-size: 12px;">
+              📁 Upload Photo
+              <input type="file" id="avatarFileInput" accept="image/*" style="display: none;" onchange="handleAvatarUpload(event)">
+            </label>
+
+            <span style="font-size: 12px; color: var(--text-muted);">or select an emoji:</span>
+          </div>
+
+          <!-- Preset Emoji Grid -->
+          <div class="avatar-picker-grid" id="presetAvatarPicker"></div>
+        </div>
+
+        <button class="btn btn-primary" onclick="addNewProfile()" style="padding: 10px 20px;">Save Profile</button>
+      </div>
+
+      <!-- Profile Cards List -->
+      <div id="profilesList"></div>
+    </div>
+  </section>
+
+  <!-- ================= TAB 5: SCOREBOARD ================= -->
+  <section id="tab-scoreboard" class="tab-pane" style="display: none;">
+    <div class="grid-2col">
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h2 style="font-size: 18px;">Leaderboard</h2>
+          <button class="btn btn-danger" style="font-size: 12px; padding: 6px 10px;" onclick="if(confirm('Reset all worked topics?')) resetWorkedTopics();">Reset Cycle</button>
+        </div>
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--line); font-size: 11px; text-transform: uppercase; color: var(--text-muted); text-align: left;">
+              <th style="padding: 8px 6px;">Member</th>
+              <th style="padding: 8px 6px; text-align: center;">Texts</th>
+              <th style="padding: 8px 6px; text-align: center;">Role A</th>
+              <th style="padding: 8px 6px; text-align: right;">Progress</th>
+            </tr>
+          </thead>
+          <tbody id="scoreboardTable"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2 style="font-size: 18px; margin-bottom: 12px;">Recent Practice Rounds</h2>
+        <div id="historyList"></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- Scripts -->
+<script src="js/config.js"></script>
+<script src="js/topics.js"></script>
+<script src="js/redemittel.js"></script>
+<script src="js/supabase-client.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

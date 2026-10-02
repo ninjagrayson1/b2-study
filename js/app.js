@@ -1,0 +1,1053 @@
+/**
+ * B2 Diskussion Study App - Client Application Logic
+ */
+
+// Global State
+const state = {
+    // Current user profile
+    activeProfile: null,
+    userRole: "ADMIN", // "ADMIN" or "MEMBER"
+    roomCode: CONFIG.DEFAULT_ROOM,
+
+    // Live session state
+    currentTopic: null,
+    roleA: "Grayson",
+    roleB: "—",
+    timerSeconds: CONFIG.DEFAULT_TIMER_SECONDS,
+    isTimerRunning: false,
+    timerInterval: null,
+
+    // Data lists
+    workedTopicIds: new Set(),
+    history: [],
+    profiles: [],
+
+    // Avatar state
+    selectedAvatar: "🎓",
+
+    // Exam section filter: "ALL", "2", "3"
+    selectedTeil: "ALL",
+
+    // Cloud connection
+    isOnline: false,
+    syncClient: null,
+    speechUtterance: null,
+    theme: "dark"
+};
+
+// Helper to render Avatar (Image or Emoji)
+function renderAvatarHtml(avatarStr, size = 40) {
+    if (!avatarStr) avatarStr = "🎓";
+    if (avatarStr.startsWith("data:image") || avatarStr.startsWith("http")) {
+        return `<img src="${avatarStr}" alt="Avatar" class="avatar-badge-img" style="width:${size}px; height:${size}px;">`;
+    } else {
+        return `<span class="avatar-badge-emoji" style="width:${size}px; height:${size}px; font-size:${Math.round(size * 0.55)}px;">${avatarStr}</span>`;
+    }
+}
+
+// Initialize App
+document.addEventListener("DOMContentLoaded", () => {
+    initSyncClient();
+    loadStoredData();
+    setupTheme();
+    setupNavigation();
+    setupEventListeners();
+    requestNotificationPermission();
+
+    // Start Realtime Polling
+    startSyncLoop();
+
+    // Initial render
+    renderAll();
+});
+
+// Setup Sync Client
+function initSyncClient() {
+    state.syncClient = new RealtimeSyncClient();
+    state.syncClient.testConnection().then(online => {
+        state.isOnline = online;
+        updateOnlineBadge();
+    });
+}
+
+// Load Persistent Data from LocalStorage
+function loadStoredData() {
+    state.theme = localStorage.getItem("b2_theme") || "dark";
+    state.roomCode = localStorage.getItem("b2_room_code") || CONFIG.DEFAULT_ROOM;
+    state.userRole = localStorage.getItem("b2_user_role") || "ADMIN";
+
+    const storedWorked = localStorage.getItem("b2_worked_topics");
+    if (storedWorked) {
+        state.workedTopicIds = new Set(JSON.parse(storedWorked));
+    }
+
+    const storedHistory = localStorage.getItem("b2_history");
+    if (storedHistory) {
+        state.history = JSON.parse(storedHistory);
+    }
+
+    const storedProfiles = localStorage.getItem("b2_profiles");
+    if (storedProfiles) {
+        state.profiles = JSON.parse(storedProfiles);
+    } else {
+        // Default profiles
+        state.profiles = [
+            { id: "p1", name: "Grayson", avatar: "👑", role: "ADMIN", texts: 0, starts: 0, bio: "B2 Study Group Admin" },
+        ];
+        saveProfiles();
+    }
+
+    // Set Active Profile
+    const activeId = localStorage.getItem("b2_active_profile_id");
+    state.activeProfile = state.profiles.find(p => p.id === activeId) || state.profiles[0];
+    state.userRole = state.activeProfile.role;
+
+    // Default first topic
+    state.currentTopic = EXERCISES[0];
+    state.roleA = state.profiles[0]?.name || "Grayson";
+    state.roleB = state.profiles[1]?.name || "—";
+}
+
+function saveData() {
+    localStorage.setItem("b2_worked_topics", JSON.stringify([...state.workedTopicIds]));
+    localStorage.setItem("b2_history", JSON.stringify(state.history));
+    localStorage.setItem("b2_room_code", state.roomCode);
+    localStorage.setItem("b2_user_role", state.userRole);
+    if (state.activeProfile) {
+        localStorage.setItem("b2_active_profile_id", state.activeProfile.id);
+    }
+}
+
+function saveProfiles() {
+    localStorage.setItem("b2_profiles", JSON.stringify(state.profiles));
+}
+
+// Navigation Tabs
+function setupNavigation() {
+    const tabs = document.querySelectorAll(".nav-btn");
+    tabs.forEach(tab => {
+        tab.addEventListener("click", () => {
+            tabs.forEach(t => t.classList.remove("active"));
+            tab.classList.add("active");
+
+            const targetSection = tab.dataset.tab;
+            document.querySelectorAll(".tab-pane").forEach(pane => {
+                pane.style.display = pane.id === targetSection ? "block" : "none";
+            });
+        });
+    });
+}
+
+// Randomize Round (Admin only)
+function randomize() {
+    if (state.profiles.length < 2) {
+        alert("Please have at least 2 profiles to randomize pairs.");
+        return;
+    }
+
+    // Filter topic pool based on active Teil filter
+    let basePool = EXERCISES;
+    if (state.selectedTeil === "2") {
+        basePool = EXERCISES_TEIL2;
+    } else if (state.selectedTeil === "3") {
+        basePool = EXERCISES_TEIL3;
+    }
+
+    let pool = basePool.filter(t => !state.workedTopicIds.has(t.id));
+    if (pool.length === 0) {
+        const teilLabel = state.selectedTeil === "2" ? "Teil 2" : (state.selectedTeil === "3" ? "Teil 3" : "all");
+        if (confirm(`All topics in ${teilLabel} have been worked! Reset worked topics in this section?`)) {
+            basePool.forEach(t => state.workedTopicIds.delete(t.id));
+            pool = basePool;
+        } else {
+            return;
+        }
+    }
+
+    // Avoid recent topics
+    const recentIds = state.history.slice(0, 3).map(h => h.topicId);
+    const fresh = pool.filter(t => !recentIds.includes(t.id));
+    if (fresh.length > 0) pool = fresh;
+
+    const chosenTopic = pool[Math.floor(Math.random() * pool.length)];
+
+    // Pick two random distinct members
+    const shuffled = [...state.profiles].sort(() => 0.5 - Math.random());
+    const a = shuffled[0].name;
+    const b = shuffled[1].name;
+
+    state.currentTopic = chosenTopic;
+    state.roleA = a;
+    state.roleB = b;
+    resetTimer();
+
+    // Record in history preview
+    state.history.unshift({
+        topicId: chosenTopic.id,
+        title: chosenTopic.title,
+        teil: chosenTopic.teil,
+        roleA: a,
+        roleB: b,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    });
+    state.history = state.history.slice(0, 40);
+    saveData();
+
+    // Broadcast to Supabase
+    broadcastSession();
+    const roleLabelA = chosenTopic.teil === 2 ? "Speaker" : "Person A (starts)";
+    const roleLabelB = chosenTopic.teil === 2 ? "Feedback & Questions" : "Person B (partner)";
+    broadcastNotification(`🎲 New Round: ${chosenTopic.title} (Teil ${chosenTopic.teil})`, `${roleLabelA}: ${a} · ${roleLabelB}: ${b}`);
+
+    renderLiveSession();
+    renderTopicsList();
+    renderHistory();
+}
+
+function selectSpecificTopic(id) {
+    const topic = EXERCISES.find(t => t.id === id);
+    if (!topic) return;
+
+    state.currentTopic = topic;
+    resetTimer();
+    broadcastSession();
+
+    renderLiveSession();
+    renderTopicsList();
+
+    // Switch to live tab
+    document.querySelector('[data-tab="tab-live"]').click();
+}
+
+// Roles Controls
+function swapRoles() {
+    const temp = state.roleA;
+    state.roleA = state.roleB;
+    state.roleB = temp;
+    broadcastSession();
+    renderLiveSession();
+}
+
+function changePartner() {
+    const pool = state.profiles.map(p => p.name).filter(n => n !== state.roleA);
+    if (pool.length > 0) {
+        state.roleB = pool[Math.floor(Math.random() * pool.length)];
+        broadcastSession();
+        renderLiveSession();
+    }
+}
+
+function changeBothRoles() {
+    if (state.profiles.length < 2) return;
+    const shuffled = [...state.profiles].sort(() => 0.5 - Math.random());
+    state.roleA = shuffled[0].name;
+    state.roleB = shuffled[1].name;
+    broadcastSession();
+    renderLiveSession();
+}
+
+// Mark Worked
+function markWorked() {
+    if (!state.currentTopic) return;
+    state.workedTopicIds.add(state.currentTopic.id);
+
+    // Update stats for role A and B
+    const profA = state.profiles.find(p => p.name === state.roleA);
+    const profB = state.profiles.find(p => p.name === state.roleB);
+    if (profA) { profA.texts++; profA.starts++; }
+    if (profB) { profB.texts++; }
+
+    saveProfiles();
+    saveData();
+
+    renderLiveSession();
+    renderTopicsList();
+    renderScoreboard();
+    renderProfiles();
+}
+
+function resetWorkedTopics() {
+    state.workedTopicIds.clear();
+    saveData();
+    renderLiveSession();
+    renderTopicsList();
+    renderScoreboard();
+}
+
+// Timer Logic
+function startTimer() {
+    if (state.isTimerRunning) return;
+    state.isTimerRunning = true;
+    renderTimerControls();
+
+    broadcastSession();
+
+    clearInterval(state.timerInterval);
+    state.timerInterval = setInterval(() => {
+        if (state.timerSeconds > 0) {
+            state.timerSeconds--;
+            updateTimerDisplay();
+        } else {
+            clearInterval(state.timerInterval);
+            state.isTimerRunning = false;
+            playChime();
+            renderTimerControls();
+            broadcastSession();
+        }
+    }, 1000);
+}
+
+function pauseTimer() {
+    state.isTimerRunning = false;
+    clearInterval(state.timerInterval);
+    renderTimerControls();
+    broadcastSession();
+}
+
+function resetTimer() {
+    state.isTimerRunning = false;
+    clearInterval(state.timerInterval);
+    state.timerSeconds = CONFIG.DEFAULT_TIMER_SECONDS;
+    updateTimerDisplay();
+    renderTimerControls();
+    broadcastSession();
+}
+
+function updateTimerDisplay() {
+    const m = Math.floor(state.timerSeconds / 60);
+    const s = state.timerSeconds % 60;
+    const formatted = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    const el = document.getElementById("timerDigits");
+    if (el) {
+        el.textContent = formatted;
+        el.classList.toggle("urgent", state.timerSeconds <= 30 && state.timerSeconds > 0);
+    }
+}
+
+function renderTimerControls() {
+    const playBtn = document.getElementById("timerPlayBtn");
+    if (playBtn) {
+        if (state.isTimerRunning) {
+            playBtn.innerHTML = "⏸ Pause";
+            playBtn.onclick = pauseTimer;
+            playBtn.className = "btn btn-danger";
+        } else {
+            playBtn.innerHTML = "▶ Start";
+            playBtn.onclick = startTimer;
+            playBtn.className = "btn btn-primary";
+        }
+    }
+}
+
+// Audio & German TTS
+function readGermanText() {
+    if (!state.currentTopic) return;
+    stopSpeech();
+
+    state.speechUtterance = new SpeechSynthesisUtterance(state.currentTopic.text);
+    state.speechUtterance.lang = CONFIG.TTS_LANG;
+    state.speechUtterance.rate = CONFIG.TTS_RATE;
+
+    const btn = document.getElementById("ttsBtn");
+    if (btn) btn.innerHTML = "⏹ Stop Voice";
+
+    state.speechUtterance.onend = () => {
+        if (btn) btn.innerHTML = "🔊 Read German";
+    };
+    state.speechUtterance.onerror = () => {
+        if (btn) btn.innerHTML = "🔊 Read German";
+    };
+
+    window.speechSynthesis.speak(state.speechUtterance);
+}
+
+function stopSpeech() {
+    if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+    }
+    const btn = document.getElementById("ttsBtn");
+    if (btn) btn.innerHTML = "🔊 Read German";
+}
+
+function speakPhrase(phrase) {
+    stopSpeech();
+    const utt = new SpeechSynthesisUtterance(phrase);
+    utt.lang = CONFIG.TTS_LANG;
+    utt.rate = CONFIG.TTS_RATE;
+    window.speechSynthesis.speak(utt);
+}
+
+function playChime() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.15); // A5
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.8);
+    } catch (e) {
+        console.warn("AudioContext chime not available", e);
+    }
+}
+
+// Calling & Notification System
+function callGroup(customMsg = "") {
+    const sender = state.activeProfile ? state.activeProfile.name : "Admin";
+    const title = `📢 Study Call from ${sender}!`;
+    const message = customMsg || `Time for German B2 Speaking Practice! Join room ${state.roomCode} now!`;
+
+    playChime();
+    showNotificationBanner(title, message);
+    triggerBrowserNotification(title, message);
+
+    broadcastNotification(title, message);
+}
+
+function requestNotificationPermission() {
+    if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission();
+    }
+}
+
+function triggerBrowserNotification(title, body) {
+    if ("Notification" in window && Notification.permission === "granted") {
+        try {
+            new Notification(title, {
+                body: body,
+                icon: "favicon.ico"
+            });
+        } catch (e) {}
+    }
+}
+
+function showNotificationBanner(title, message) {
+    const banner = document.getElementById("alertBanner");
+    if (banner) {
+        document.getElementById("bannerTitle").textContent = title;
+        document.getElementById("bannerMessage").textContent = message;
+        banner.style.display = "flex";
+    }
+}
+
+// Real-Time Cloud Synchronization
+async function broadcastSession() {
+    if (!state.syncClient) return;
+    const session = {
+        roomCode: state.roomCode,
+        adminName: state.activeProfile?.name || "Admin",
+        topicId: state.currentTopic?.id || "",
+        topicTitle: state.currentTopic?.title || "",
+        topicText: state.currentTopic?.text || "",
+        topicAr: state.currentTopic?.ar || "",
+        roleA: state.roleA,
+        roleB: state.roleB,
+        timerSeconds: state.timerSeconds,
+        isTimerRunning: state.isTimerRunning
+    };
+
+    await state.syncClient.upsertSession(session);
+}
+
+async function broadcastNotification(title, message) {
+    if (!state.syncClient) return;
+    const sender = state.activeProfile?.name || "Admin";
+    await state.syncClient.sendNotification(state.roomCode, sender, title, message);
+}
+
+function startSyncLoop() {
+    setInterval(async () => {
+        if (!state.syncClient || !state.syncClient.isConfigured()) return;
+
+        // 1. Sync session state for members
+        if (state.userRole === "MEMBER") {
+            const remote = await state.syncClient.fetchSession(state.roomCode);
+            if (remote) {
+                state.isOnline = true;
+                updateOnlineBadge();
+
+                // Check if topic changed
+                if (remote.topic_id && (!state.currentTopic || state.currentTopic.id !== remote.topic_id)) {
+                    state.currentTopic = EXERCISES.find(t => t.id === remote.topic_id) || {
+                        id: remote.topic_id,
+                        title: remote.topic_title,
+                        text: remote.topic_text,
+                        ar: remote.topic_ar
+                    };
+                    renderLiveSession();
+                }
+
+                state.roleA = remote.role_a || state.roleA;
+                state.roleB = remote.role_b || state.roleB;
+
+                // Sync remote timer
+                if (typeof remote.timer_seconds === "number" && !state.isTimerRunning) {
+                    state.timerSeconds = remote.timer_seconds;
+                    updateTimerDisplay();
+                }
+
+                renderRoles();
+            }
+        }
+
+        // 2. Fetch notifications
+        const notifs = await state.syncClient.fetchRecentNotifications(state.roomCode);
+        if (notifs && notifs.length > 0) {
+            const newest = notifs[0];
+            if (newest.id > state.syncClient.lastNotificationId) {
+                if (state.syncClient.lastNotificationId !== 0 && newest.sender_name !== state.activeProfile?.name) {
+                    playChime();
+                    showNotificationBanner(newest.title, newest.message);
+                    triggerBrowserNotification(newest.title, newest.message);
+                }
+                state.syncClient.lastNotificationId = newest.id;
+            }
+        }
+    }, CONFIG.POLL_INTERVAL_MS);
+}
+
+function updateOnlineBadge() {
+    const dot = document.getElementById("statusDot");
+    const text = document.getElementById("statusText");
+    if (dot && text) {
+        if (state.isOnline) {
+            dot.className = "pulse-dot";
+            text.textContent = "ONLINE · REALTIME";
+        } else {
+            dot.className = "pulse-dot offline";
+            text.textContent = "LOCAL MODE";
+        }
+    }
+}
+
+// Rendering UI
+function renderAll() {
+    renderLiveSession();
+    renderTopicsList();
+    renderRedemittel();
+    renderProfiles();
+    renderScoreboard();
+    renderHistory();
+    updateTimerDisplay();
+    renderTimerControls();
+}
+
+function renderLiveSession() {
+    if (!state.currentTopic) return;
+
+    const isTeil2 = state.currentTopic.teil === 2;
+    const eyebrow = document.getElementById("liveEyebrow");
+    if (eyebrow) {
+        eyebrow.textContent = isTeil2 ? "GERMAN B2 · SPRECHEN TEIL 2 (THEMA PRÄSENTIEREN)" : "GERMAN B2 · SPRECHEN TEIL 3 (GEMEINSAM PLANEN)";
+    }
+
+    const timerTitle = document.getElementById("timerTitle");
+    if (timerTitle) {
+        timerTitle.textContent = isTeil2 ? "4-Minute Presentation & Feedback" : "5-Minute Discussion Timer";
+    }
+
+    document.getElementById("topicTitle").textContent = state.currentTopic.title;
+    document.getElementById("exerciseText").textContent = state.currentTopic.text;
+    document.getElementById("arabicText").textContent = state.currentTopic.ar || "";
+
+    const workedPill = document.getElementById("topicWorkedBadge");
+    if (workedPill) {
+        workedPill.style.display = state.workedTopicIds.has(state.currentTopic.id) ? "inline-flex" : "none";
+    }
+
+    const teilBadge = document.getElementById("topicTeilBadge");
+    if (teilBadge) {
+        teilBadge.textContent = isTeil2 ? "Teil 2: Präsentation" : "Teil 3: Planung";
+        teilBadge.style.color = isTeil2 ? "var(--accent2)" : "var(--good)";
+        teilBadge.style.borderColor = isTeil2 ? "var(--accent2)" : "var(--good)";
+    }
+
+    renderRoles();
+}
+
+function renderRoles() {
+    const aBox = document.getElementById("roleABox");
+    const bBox = document.getElementById("roleBBox");
+    const myName = state.activeProfile?.name || "";
+
+    const isTeil2 = state.currentTopic?.teil === 2;
+    const isMeA = state.roleA.toLowerCase() === myName.toLowerCase();
+    const isMeB = state.roleB.toLowerCase() === myName.toLowerCase();
+
+    const profA = state.profiles.find(p => p.name.toLowerCase() === state.roleA.toLowerCase());
+    const profB = state.profiles.find(p => p.name.toLowerCase() === state.roleB.toLowerCase());
+    const avatarA = profA ? profA.avatar : "👑";
+    const avatarB = profB ? profB.avatar : "🎓";
+
+    if (aBox) {
+        document.getElementById("roleAName").textContent = state.roleA;
+        document.getElementById("roleAAvatar").innerHTML = renderAvatarHtml(avatarA, 36);
+        document.getElementById("roleAMe").style.display = isMeA ? "inline-block" : "none";
+        document.getElementById("roleATag").textContent = isTeil2 ? "A · REFERENT(IN)" : "A · STARTS PLANNING";
+        aBox.classList.toggle("highlight-me", isMeA);
+    }
+
+    if (bBox) {
+        document.getElementById("roleBName").textContent = state.roleB;
+        document.getElementById("roleBAvatar").innerHTML = renderAvatarHtml(avatarB, 36);
+        document.getElementById("roleBMe").style.display = isMeB ? "inline-block" : "none";
+        document.getElementById("roleBTag").textContent = isTeil2 ? "B · FEEDBACK & FRAGEN" : "B · PARTNER";
+        bBox.classList.toggle("highlight-me", isMeB);
+    }
+
+    // Role-dependent controls
+    const adminControls = document.getElementById("adminControls");
+    if (adminControls) {
+        adminControls.style.display = state.userRole === "ADMIN" ? "block" : "none";
+    }
+    const memberNote = document.getElementById("memberNote");
+    if (memberNote) {
+        memberNote.style.display = state.userRole === "MEMBER" ? "block" : "none";
+    }
+}
+
+function renderTopicsList() {
+    const container = document.getElementById("topicsList");
+    if (!container) return;
+
+    const query = (document.getElementById("topicSearch")?.value || "").toLowerCase().trim();
+    const filter = document.querySelector(".filter-btn.active")?.dataset.filter || "all";
+
+    const filtered = EXERCISES.filter(t => {
+        const matchesQuery = t.title.toLowerCase().includes(query) || t.text.toLowerCase().includes(query);
+        const isWorked = state.workedTopicIds.has(t.id);
+        const matchesFilter = filter === "all" ||
+            (filter === "teil2" && t.teil === 2) ||
+            (filter === "teil3" && t.teil === 3) ||
+            (filter === "unworked" && !isWorked) ||
+            (filter === "worked" && isWorked);
+        return matchesQuery && matchesFilter;
+    });
+
+    // Update counts
+    document.getElementById("countPill").textContent = `${EXERCISES.length} Topics (40 Teil 2 + 46 Teil 3)`;
+    document.getElementById("usedPill").textContent = `${state.workedTopicIds.size} Worked`;
+
+    container.innerHTML = filtered.map(t => {
+        const isWorked = state.workedTopicIds.has(t.id);
+        const isActive = state.currentTopic?.id === t.id;
+        const isTeil2 = t.teil === 2;
+        return `
+            <div class="topic-item ${isWorked ? 'worked' : ''} ${isActive ? 'active' : ''}">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 6px; gap: 6px;">
+                    <strong style="font-size: 15px;">${esc(t.title)}</strong>
+                    <div style="display: flex; gap: 4px; flex-shrink: 0;">
+                        <span class="pill" style="font-size: 10px; padding: 2px 6px; color: ${isTeil2 ? 'var(--accent2)' : 'var(--good)'}; border-color: ${isTeil2 ? 'var(--accent)' : 'var(--good)'};">
+                            ${isTeil2 ? 'Teil 2' : 'Teil 3'}
+                        </span>
+                        ${isWorked ? '<span class="pill" style="color: var(--good); border-color: var(--good); font-size: 10px; padding: 2px 6px;">✓</span>' : ''}
+                    </div>
+                </div>
+                <p style="font-size: 12px; color: var(--text-muted); line-height: 1.4; margin-bottom: 10px;">
+                    ${esc(t.text.substring(0, 110))}...
+                </p>
+                <button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px; width: 100%;" onclick="selectSpecificTopic('${t.id}')">
+                    ▶ Practice This Topic
+                </button>
+            </div>
+        `;
+    }).join("");
+}
+
+function renderRedemittel() {
+    const container = document.getElementById("redemittelList");
+    if (!container) return;
+
+    container.innerHTML = REDEMITTEL_CATEGORIES.map(cat => `
+        <div class="card" style="margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div>
+                    <h3 style="font-size: 16px; color: var(--accent2);">${cat.icon} ${cat.title}</h3>
+                    <p style="font-size: 12px; color: var(--text-muted);">${cat.subtitle}</p>
+                </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                ${cat.phrases.map(p => `
+                    <div style="display: flex; justify-content: space-between; align-items: center; background: var(--panel-card); border: 1px solid var(--line); padding: 8px 12px; border-radius: 10px;">
+                        <span style="font-size: 14px;">${esc(p)}</span>
+                        <div style="display: flex; gap: 6px;">
+                            <button class="btn" style="padding: 4px 8px; font-size: 12px;" onclick="speakPhrase('${esc(p)}')">🔊</button>
+                            <button class="btn" style="padding: 4px 8px; font-size: 12px;" onclick="copyText('${esc(p)}')">📋</button>
+                        </div>
+                    </div>
+                `).join("")}
+            </div>
+        </div>
+    `).join("");
+}
+
+// Profiles System
+function renderProfiles() {
+    const list = document.getElementById("profilesList");
+    if (!list) return;
+
+    list.innerHTML = state.profiles.map(p => {
+        const isCurrent = state.activeProfile?.id === p.id;
+        const totalPct = Math.round((p.texts / EXERCISES.length) * 100) || 0;
+        return `
+            <div class="profile-card ${isCurrent ? 'active-user' : ''}">
+                <div style="display: flex; align-items: center; gap: 14px;">
+                    <div class="profile-avatar">${renderAvatarHtml(p.avatar, 50)}</div>
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <strong style="font-size: 16px;">${esc(p.name)}</strong>
+                            <span class="pill" style="font-size: 10px; padding: 2px 6px;">${p.role}</span>
+                            ${isCurrent ? '<span class="me-badge">YOU</span>' : ''}
+                        </div>
+                        <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">${esc(p.bio || 'German B2 learner')}</p>
+                        <p style="font-size: 11px; color: var(--accent2); margin-top: 2px;">
+                            ${p.texts} texts completed · ${p.starts} as Role A (${totalPct}%)
+                        </p>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                    ${!isCurrent ? `<button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;" onclick="switchProfile('${p.id}')">Select</button>` : ''}
+                    <button class="btn" style="padding: 6px 10px; font-size: 12px;" onclick="editProfile('${p.id}')">✏️ Edit</button>
+                    ${state.profiles.length > 2 ? `<button class="btn btn-danger" style="padding: 6px 10px; font-size: 12px;" onclick="deleteProfile('${p.id}')">🗑️</button>` : ''}
+                </div>
+            </div>
+        `;
+    }).join("");
+
+    // Active profile summary badge in header
+    const badge = document.getElementById("activeUserBadge");
+    if (badge && state.activeProfile) {
+        badge.innerHTML = `<span style="display:inline-flex; align-items:center; gap:6px;">${renderAvatarHtml(state.activeProfile.avatar, 22)} <b>${esc(state.activeProfile.name)}</b> (${state.userRole})</span>`;
+    }
+
+    renderPresetAvatars();
+}
+
+function renderPresetAvatars() {
+    const container = document.getElementById("presetAvatarPicker");
+    if (!container) return;
+
+    const emojis = ["🎓", "👑", "📚", "🌟", "💡", "🚀", "🦊", "🦁", "🐼", "🦉", "⚡", "🎯", "🎨", "⚽", "🏆", "☕"];
+    container.innerHTML = emojis.map(em => `
+        <button type="button" class="avatar-choice-btn ${state.selectedAvatar === em ? 'selected' : ''}" onclick="selectPresetAvatar('${em}')">
+            ${em}
+        </button>
+    `).join("");
+}
+
+function selectPresetAvatar(emoji) {
+    state.selectedAvatar = emoji;
+    const preview = document.getElementById("newAvatarPreview");
+    if (preview) {
+        preview.innerHTML = emoji;
+        preview.className = "avatar-badge-emoji";
+    }
+    renderPresetAvatars();
+}
+
+function handleAvatarUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+        alert("Please select a valid image file (PNG, JPG, WebP)");
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+            // Compress and resize image using offscreen canvas to keep it lightweight (~150x150)
+            const canvas = document.createElement("canvas");
+            const size = 160;
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext("2d");
+
+            // Crop to center square
+            const minDim = Math.min(img.width, img.height);
+            const sx = (img.width - minDim) / 2;
+            const sy = (img.height - minDim) / 2;
+
+            ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+
+            state.selectedAvatar = dataUrl;
+            const preview = document.getElementById("newAvatarPreview");
+            if (preview) {
+                preview.innerHTML = `<img src="${dataUrl}" alt="Avatar" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">`;
+            }
+            renderPresetAvatars();
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function switchProfile(profileId) {
+    const target = state.profiles.find(p => p.id === profileId);
+    if (!target) return;
+    state.activeProfile = target;
+    state.userRole = target.role;
+    saveData();
+    renderRoles();
+    renderProfiles();
+}
+
+function addNewProfile() {
+    const nameInput = document.getElementById("newProfileName");
+    const roleInput = document.getElementById("newProfileRole");
+    const bioInput = document.getElementById("newProfileBio");
+
+    const name = nameInput.value.trim();
+    if (!name) {
+        alert("Please enter a name for the profile.");
+        return;
+    }
+
+    const newP = {
+        id: "p_" + Date.now(),
+        name: name,
+        avatar: state.selectedAvatar || "🎓",
+        role: roleInput ? roleInput.value : "MEMBER",
+        texts: 0,
+        starts: 0,
+        bio: bioInput ? bioInput.value.trim() : "German B2 study member"
+    };
+
+    state.profiles.push(newP);
+    saveProfiles();
+
+    // Reset inputs
+    nameInput.value = "";
+    if (bioInput) bioInput.value = "";
+    state.selectedAvatar = "🎓";
+    selectPresetAvatar("🎓");
+
+    renderProfiles();
+    renderRoles();
+    renderScoreboard();
+}
+
+function deleteProfile(profileId) {
+    if (state.profiles.length <= 2) {
+        alert("You must keep at least 2 profiles.");
+        return;
+    }
+    if (!confirm("Are you sure you want to remove this profile?")) return;
+    state.profiles = state.profiles.filter(p => p.id !== profileId);
+    if (state.activeProfile?.id === profileId) {
+        state.activeProfile = state.profiles[0];
+        state.userRole = state.activeProfile.role;
+    }
+    saveProfiles();
+    saveData();
+    renderAll();
+}
+
+function editProfile(profileId) {
+    const p = state.profiles.find(x => x.id === profileId);
+    if (!p) return;
+
+    const newName = prompt("Edit Profile Name:", p.name);
+    if (newName && newName.trim()) {
+        p.name = newName.trim();
+        const newBio = prompt("Short Bio / Target:", p.bio || "");
+        if (newBio !== null) p.bio = newBio.trim();
+        const roleChoice = confirm("Set role as ADMIN? (Cancel for MEMBER)");
+        p.role = roleChoice ? "ADMIN" : "MEMBER";
+        if (state.activeProfile?.id === p.id) {
+            state.userRole = p.role;
+        }
+        saveProfiles();
+        saveData();
+        renderAll();
+    }
+}
+
+function renderScoreboard() {
+    const table = document.getElementById("scoreboardTable");
+    if (!table) return;
+
+    const sorted = [...state.profiles].sort((a, b) => b.texts - a.texts || b.starts - a.starts);
+
+    table.innerHTML = sorted.map((p, idx) => {
+        const pct = Math.round((p.texts / EXERCISES.length) * 100) || 0;
+        return `
+            <tr style="border-bottom: 1px solid var(--line); font-size: 13px;">
+                <td style="padding: 10px 6px;">
+                    <span style="font-weight: 800; color: var(--accent2); margin-right: 6px;">#${idx + 1}</span>
+                    ${p.avatar} ${esc(p.name)}
+                </td>
+                <td style="padding: 10px 6px; text-align: center;">${p.texts}</td>
+                <td style="padding: 10px 6px; text-align: center;">${p.starts}</td>
+                <td style="padding: 10px 6px; text-align: right; font-weight: 800; color: var(--good);">${pct}%</td>
+            </tr>
+        `;
+    }).join("");
+}
+
+function renderHistory() {
+    const container = document.getElementById("historyList");
+    if (!container) return;
+
+    if (state.history.length === 0) {
+        container.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">No rounds recorded yet.</div>';
+        return;
+    }
+
+    container.innerHTML = state.history.map((h, idx) => `
+        <div style="padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <b>${esc(h.title)}</b>
+                <div style="font-size: 11px; color: var(--text-muted);">${esc(h.roleA)} (A) ➔ ${esc(h.roleB)} (B)</div>
+            </div>
+            <span style="font-size: 11px; color: var(--accent2);">${h.time}</span>
+        </div>
+    `).join("");
+}
+
+// Text Highlighter
+function highlightSelectedText() {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+
+    const range = sel.getRangeAt(0);
+    const container = document.getElementById("exerciseText");
+    if (!container || !container.contains(range.commonAncestorContainer)) return;
+
+    try {
+        const mark = document.createElement("mark");
+        mark.className = "exercise-highlight";
+        mark.appendChild(range.extractContents());
+        range.insertNode(mark);
+        sel.removeAllRanges();
+    } catch (e) {}
+}
+
+// Theme
+function setupTheme() {
+    document.body.classList.toggle("light", state.theme === "light");
+    const themeBtn = document.getElementById("themeBtn");
+    if (themeBtn) {
+        themeBtn.textContent = state.theme === "light" ? "🌙 Dark" : "☀️ Light";
+    }
+}
+
+function toggleTheme() {
+    state.theme = state.theme === "light" ? "dark" : "light";
+    localStorage.setItem("b2_theme", state.theme);
+    setupTheme();
+}
+
+// Helpers
+function copyText(text) {
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(text);
+        alert("Copied to clipboard!");
+    }
+}
+
+function copyExercise() {
+    if (!state.currentTopic) return;
+    copyText(`${state.currentTopic.title}\n\n${state.currentTopic.text}`);
+}
+
+function esc(str) {
+    if (!str) return "";
+    return String(str).replace(/[&<>"']/g, c => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+}
+
+// Section Selector for Randomizer
+function setExamSection(sec) {
+    state.selectedTeil = sec;
+
+    const btnAll = document.getElementById("modeBtnAll");
+    const btnT2 = document.getElementById("modeBtnT2");
+    const btnT3 = document.getElementById("modeBtnT3");
+
+    if (btnAll) btnAll.style.background = sec === "ALL" ? "var(--accent)" : "var(--panel-card)";
+    if (btnAll) btnAll.style.color = sec === "ALL" ? "#fff" : "var(--text)";
+    if (btnT2) btnT2.style.background = sec === "2" ? "var(--accent)" : "var(--panel-card)";
+    if (btnT2) btnT2.style.color = sec === "2" ? "#fff" : "var(--text)";
+    if (btnT3) btnT3.style.background = sec === "3" ? "var(--accent)" : "var(--panel-card)";
+    if (btnT3) btnT3.style.color = sec === "3" ? "#fff" : "var(--text)";
+}
+
+// Filter Redemittel Phrases
+function filterRedemittel(type) {
+    const btnAll = document.getElementById("rmBtnAll");
+    const btnT2 = document.getElementById("rmBtnT2");
+    const btnT3 = document.getElementById("rmBtnT3");
+
+    if (btnAll) btnAll.style.background = type === "all" ? "var(--accent)" : "var(--panel-card)";
+    if (btnAll) btnAll.style.color = type === "all" ? "#fff" : "var(--text)";
+    if (btnT2) btnT2.style.background = type === "t2" ? "var(--accent)" : "var(--panel-card)";
+    if (btnT2) btnT2.style.color = type === "t2" ? "#fff" : "var(--text)";
+    if (btnT3) btnT3.style.background = type === "t3" ? "var(--accent)" : "var(--panel-card)";
+    if (btnT3) btnT3.style.color = type === "t3" ? "#fff" : "var(--text)";
+
+    let list = REDEMITTEL_CATEGORIES;
+    if (type === "t2") list = REDEMITTEL_TEIL2;
+    if (type === "t3") list = REDEMITTEL_TEIL3;
+
+    const container = document.getElementById("redemittelList");
+    if (!container) return;
+
+    container.innerHTML = list.map(cat => `
+        <div class="card" style="margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div>
+                    <h3 style="font-size: 16px; color: var(--accent2);">${cat.icon} ${cat.title}</h3>
+                    <p style="font-size: 12px; color: var(--text-muted);">${cat.subtitle}</p>
+                </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                ${cat.phrases.map(p => `
+                    <div style="display: flex; justify-content: space-between; align-items: center; background: var(--panel-card); border: 1px solid var(--line); padding: 8px 12px; border-radius: 10px;">
+                        <span style="font-size: 14px;">${esc(p)}</span>
+                        <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                            <button class="btn" style="padding: 4px 8px; font-size: 12px;" onclick="speakPhrase('${esc(p)}')">🔊</button>
+                            <button class="btn" style="padding: 4px 8px; font-size: 12px;" onclick="copyText('${esc(p)}')">📋</button>
+                        </div>
+                    </div>
+                `).join("")}
+            </div>
+        </div>
+    `).join("");
+}
+
+// Event Listeners setup
+function setupEventListeners() {
+    const searchInput = document.getElementById("topicSearch");
+    if (searchInput) {
+        searchInput.addEventListener("input", renderTopicsList);
+    }
+
+    const filterBtns = document.querySelectorAll(".filter-btn");
+    filterBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+            filterBtns.forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            renderTopicsList();
+        });
+    });
+
+    const roomInput = document.getElementById("roomCodeInput");
+    if (roomInput) {
+        roomInput.value = state.roomCode;
+        roomInput.addEventListener("change", () => {
+            state.roomCode = roomInput.value.trim().toUpperCase() || CONFIG.DEFAULT_ROOM;
+            saveData();
+            broadcastSession();
+        });
+    }
+}
