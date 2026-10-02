@@ -823,10 +823,11 @@ function renderMembers() {
     const list = state.members || [];
     const online = list.filter(m => m.online).length;
     if (pill) pill.textContent = `${online} online · ${list.length} total`;
+    updateAdminMetrics();
     if (!box) return;
 
     if (list.length === 0) {
-        box.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">Nobody has entered with the group code yet.</div>';
+        box.innerHTML = '<div style="color: var(--text-muted); font-size: 13px; padding: 10px 0;">Nobody has entered with the group code yet.</div>';
         return;
     }
 
@@ -842,22 +843,39 @@ function renderMembers() {
         <div class="member-row ${m.banned ? 'banned' : ''}">
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                 <span class="member-dot ${m.online ? 'on' : ''}"></span>
-                <strong style="font-size: 15px;">${esc(cleanName)}</strong>
-                <span class="pill" style="font-size: 10px; padding: 2px 6px;">${m.banned ? "⛔ BANNED" : (m.online ? "ONLINE" : "OFFLINE")}</span>
-                ${inPool ? '<span class="pill" style="font-size: 10px; padding: 2px 6px; color: var(--good); border-color: var(--good);">✓ in candidate pool</span>' : ''}
+                <strong style="font-size: 15px; font-weight: 800;">${esc(cleanName)}</strong>
+                <span class="pill" style="font-size: 10px; padding: 2px 7px;">${m.banned ? "⛔ BANNED" : (m.online ? "ONLINE" : "OFFLINE")}</span>
+                ${inPool ? '<span class="pill" style="font-size: 10px; padding: 2px 7px; color: var(--good); border-color: var(--good);">✓ in candidate pool</span>' : ''}
             </div>
             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                <button class="btn ${inPool ? '' : 'btn-primary'}" style="padding: 6px 10px; font-size: 12px;" onclick="toggleMemberPool('${esc(cleanName)}')">
+                <button class="btn btn-pill-sm ${inPool ? '' : 'btn-primary'}" onclick="toggleMemberPool('${esc(cleanName)}')">
                     ${inPool ? '✓ Added' : '➕ Add to Pool'}
                 </button>
                 ${m.banned
-                    ? `<button class="btn btn-primary" style="padding: 6px 10px; font-size: 12px;" onclick="unbanMember(${Number(m.id)})">✅ Unban</button>`
-                    : `<button class="btn btn-danger" style="padding: 6px 10px; font-size: 12px;" onclick="banMember(${Number(m.id)})">⛔ Ban</button>`}
-                <button class="btn" style="padding: 6px 10px; font-size: 12px;" onclick="deleteMemberAction(${Number(m.id)})">🗑️ Delete</button>
+                    ? `<button class="btn btn-primary btn-pill-sm" onclick="unbanMember(${Number(m.id)})">✅ Unban</button>`
+                    : `<button class="btn btn-danger btn-pill-sm" onclick="banMember(${Number(m.id)})">⛔ Ban</button>`}
+                <button class="btn btn-pill-sm" onclick="deleteMemberAction(${Number(m.id)})">🗑️ Delete</button>
             </div>
         </div>
         `;
     }).join("");
+}
+
+function updateAdminMetrics() {
+    const list = state.members || [];
+    const online = list.filter(m => m.online).length;
+    const total = list.length;
+    const pool = (state.profiles || []).length;
+    const worked = (state.workedTopicIds || new Set()).size;
+
+    const elTotal = document.getElementById("metricTotalMembers");
+    if (elTotal) elTotal.textContent = total;
+    const elOnline = document.getElementById("metricOnlineMembers");
+    if (elOnline) elOnline.textContent = online;
+    const elPool = document.getElementById("metricPoolCount");
+    if (elPool) elPool.textContent = pool;
+    const elWorked = document.getElementById("metricTopicsWorked");
+    if (elWorked) elWorked.textContent = `${worked} / ${EXERCISES.length}`;
 }
 
 function toggleMemberPool(name) {
@@ -868,7 +886,7 @@ function toggleMemberPool(name) {
     const existingIdx = state.profiles.findIndex(p => p.name.toLowerCase() === cleanName.toLowerCase());
     if (existingIdx >= 0) {
         if (state.profiles.length <= 1) {
-            alert("Keep at least 1 member in the pool.");
+            alert("You must keep at least 1 member in the pool.");
             return;
         }
         state.profiles.splice(existingIdx, 1);
@@ -1135,6 +1153,7 @@ function renderRedemittel() {
 // Profiles System
 function renderProfiles() {
     const list = document.getElementById("profilesList");
+    updateAdminMetrics();
     if (!list) return;
 
     list.innerHTML = state.profiles.map(p => {
@@ -1142,24 +1161,46 @@ function renderProfiles() {
         const totalPct = Math.round((p.texts / EXERCISES.length) * 100) || 0;
         return `
             <div class="profile-card ${isCurrent ? 'active-user' : ''}">
-                <div style="display: flex; align-items: center; gap: 14px;">
-                    <div class="profile-avatar">${renderAvatarHtml(p.avatar, 50)}</div>
-                    <div>
-                        <div style="display: flex; align-items: center; gap: 6px;">
-                            <strong style="font-size: 16px;">${esc(p.name)}</strong>
-                            <span class="pill" style="font-size: 10px; padding: 2px 6px;">${p.role}</span>
-                            ${isCurrent ? '<span class="me-badge">YOU</span>' : ''}
+                <div class="profile-card-header">
+                    <div style="display: flex; align-items: center; gap: 14px;">
+                        <div class="profile-avatar">${renderAvatarHtml(p.avatar, 52)}</div>
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <strong style="font-size: 17px; font-weight: 850;">${esc(p.name)}</strong>
+                                <span class="pill" style="font-size: 10px; padding: 2px 7px;">${p.role}</span>
+                                ${isCurrent ? '<span class="me-badge">YOU</span>' : ''}
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-top: 3px;">${esc(p.bio || 'German B2 learner')}</p>
                         </div>
-                        <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">${esc(p.bio || 'German B2 learner')}</p>
-                        <p style="font-size: 11px; color: var(--accent2); margin-top: 2px;">
-                            ${p.texts} texts completed · ${p.starts} as Role A (${totalPct}%)
-                        </p>
                     </div>
                 </div>
-                <div style="display: flex; gap: 6px;">
-                    ${!isCurrent ? `<button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;" onclick="switchProfile('${p.id}')">Select</button>` : ''}
-                    <button class="btn" style="padding: 6px 10px; font-size: 12px;" onclick="editProfile('${p.id}')">✏️ Edit</button>
-                    ${state.profiles.length > 1 ? `<button class="btn btn-danger" style="padding: 6px 10px; font-size: 12px;" onclick="deleteProfile('${p.id}')">🗑️</button>` : ''}
+
+                <!-- 2x2 Metric Tiles (Image 1 Style) -->
+                <div class="profile-stats-grid">
+                    <div class="profile-stat-box">
+                        <span class="stat-box-title">📚 Texts Completed</span>
+                        <strong class="stat-box-num">${p.texts}</strong>
+                    </div>
+                    <div class="profile-stat-box">
+                        <span class="stat-box-title">🎤 Starts (Role A)</span>
+                        <strong class="stat-box-num">${p.starts}</strong>
+                    </div>
+                    <div class="profile-stat-box">
+                        <span class="stat-box-title">📈 Coverage Rate</span>
+                        <strong class="stat-box-num" style="color: var(--good);">${totalPct}%</strong>
+                    </div>
+                    <div class="profile-stat-box">
+                        <span class="stat-box-title">🎯 Exam Focus</span>
+                        <strong class="stat-box-num" style="color: var(--accent2);">Teil 2 & 3</strong>
+                    </div>
+                </div>
+
+                <div class="profile-card-actions">
+                    ${!isCurrent ? `<button class="btn btn-primary btn-pill-sm" onclick="switchProfile('${p.id}')">Select Active</button>` : '<span class="pill" style="color: var(--good); border-color: var(--good); font-size: 11px;">✓ Active User</span>'}
+                    <div style="display: flex; gap: 6px;">
+                        <button class="btn btn-pill-sm" onclick="editProfile('${p.id}')">✏️ Edit</button>
+                        ${state.profiles.length > 1 ? `<button class="btn btn-danger btn-pill-sm" onclick="deleteProfile('${p.id}')">🗑️ Delete</button>` : ''}
+                    </div>
                 </div>
             </div>
         `;
@@ -1288,7 +1329,7 @@ function deleteProfile(profileId) {
     if (!confirm("Are you sure you want to remove this profile?")) return;
     state.profiles = state.profiles.filter(p => p.id !== profileId);
     if (state.activeProfile?.id === profileId) {
-        state.activeProfile = state.profiles[0];
+        state.activeProfile = state.profiles[0] || null;
     }
     saveProfiles();
     saveData();

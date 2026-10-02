@@ -1,10 +1,10 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>B2 Diskussion · Real-Time Study Group (Teil 2 & Teil 3)</title>
-  <link rel="stylesheet" href="css/style.css?v=5">
+  <link rel="stylesheet" href="css/style.css?v=6">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -278,8 +278,32 @@
 
   <!-- ================= TAB 4: PROFILES ================= -->
   <section id="tab-profiles" class="tab-pane admin-only" style="display: none;">
+    <!-- Admin Glass Metrics Dashboard (Image 1 Style) -->
+    <div class="metrics-grid-4" style="margin-bottom: 20px;">
+      <div class="metric-tile">
+        <div class="metric-head"><span class="metric-icon">👥</span> Group Members</div>
+        <div class="metric-val" id="metricTotalMembers">0</div>
+        <div class="metric-sub">Entered room with code</div>
+      </div>
+      <div class="metric-tile">
+        <div class="metric-head"><span class="metric-icon">🟢</span> Online Now</div>
+        <div class="metric-val" id="metricOnlineMembers" style="color: var(--good);">0</div>
+        <div class="metric-sub">Connected in realtime</div>
+      </div>
+      <div class="metric-tile">
+        <div class="metric-head"><span class="metric-icon">🎲</span> Candidate Pool</div>
+        <div class="metric-val" id="metricPoolCount" style="color: var(--accent2);">0</div>
+        <div class="metric-sub">Selected for pair practice</div>
+      </div>
+      <div class="metric-tile">
+        <div class="metric-head"><span class="metric-icon">📚</span> Topics Worked</div>
+        <div class="metric-val" id="metricTopicsWorked">0 / 86</div>
+        <div class="metric-sub">Teil 2 & Teil 3 completed</div>
+      </div>
+    </div>
+
     <!-- Live members who entered with the B2-grp code -->
-    <div class="card" style="margin-bottom: 16px;">
+    <div class="card" style="margin-bottom: 20px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
         <h2 style="font-size: 20px;">👥 Group Members (live)</h2>
         <span class="pill" id="membersCountPill">0 online</span>
@@ -340,7 +364,7 @@
           <div class="avatar-picker-grid" id="presetAvatarPicker"></div>
         </div>
 
-        <button class="btn btn-primary" onclick="addNewProfile()" style="padding: 10px 20px;">Save Profile</button>
+        <button class="btn btn-primary btn-pill-lg" onclick="addNewProfile()">+ Save Profile</button>
       </div>
 
       <!-- Profile Cards List -->
@@ -385,6 +409,6 @@
 <script src="js/topics.js?v=3"></script>
 <script src="js/redemittel.js?v=3"></script>
 <script src="js/supabase-client.js?v=3"></script>
-<script src="js/app.js?v=5"></script>
+<script src="js/app.js?v=6"></script>
 </body>
 </html>
