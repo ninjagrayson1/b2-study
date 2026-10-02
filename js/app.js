@@ -1073,7 +1073,7 @@ function renderProfiles() {
                 <div style="display: flex; gap: 6px;">
                     ${!isCurrent ? `<button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;" onclick="switchProfile('${p.id}')">Select</button>` : ''}
                     <button class="btn" style="padding: 6px 10px; font-size: 12px;" onclick="editProfile('${p.id}')">✏️ Edit</button>
-                    ${state.profiles.length > 2 ? `<button class="btn btn-danger" style="padding: 6px 10px; font-size: 12px;" onclick="deleteProfile('${p.id}')">🗑️</button>` : ''}
+                    ${state.profiles.length > 1 ? `<button class="btn btn-danger" style="padding: 6px 10px; font-size: 12px;" onclick="deleteProfile('${p.id}')">🗑️</button>` : ''}
                 </div>
             </div>
         `;
@@ -1195,8 +1195,8 @@ function addNewProfile() {
 }
 
 function deleteProfile(profileId) {
-    if (state.profiles.length <= 2) {
-        alert("You must keep at least 2 profiles.");
+    if (state.profiles.length <= 1) {
+        alert("You must keep at least 1 profile.");
         return;
     }
     if (!confirm("Are you sure you want to remove this profile?")) return;
