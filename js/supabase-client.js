@@ -1,6 +1,6 @@
 /**
  * Supabase client (access-code version)
- * The website never touches the tables directly. It only calls 4 secured
+ * The website never touches the tables directly. It only calls secured
  * functions in Supabase, and Supabase decides what each role may do.
  */
 class RealtimeSyncClient {
@@ -8,8 +8,21 @@ class RealtimeSyncClient {
         this.url = (CONFIG.SUPABASE_URL || "").replace(/\/$/, "");
         this.key = CONFIG.SUPABASE_ANON_KEY || "";
         this.token = localStorage.getItem("b2_token") || "";
+        this.device = this.getDeviceId();
         this.lastNotificationId = 0;
         this.notifReady = false;
+    }
+
+    // Random id for this browser (lets the admin ban a device)
+    getDeviceId() {
+        let id = localStorage.getItem("b2_device") || "";
+        if (id.length < 8) {
+            id = (window.crypto && crypto.randomUUID)
+                ? crypto.randomUUID()
+                : "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+            localStorage.setItem("b2_device", id);
+        }
+        return id;
     }
 
     isConfigured() {
@@ -39,7 +52,7 @@ class RealtimeSyncClient {
     // Check an access code. Returns { ok, role } or { ok:false, error }
     async login(code) {
         try {
-            const d = await this.rpc("app_login", { p_code: code });
+            const d = await this.rpc("app_login", { p_code: code, p_device: this.device });
             if (d && d.token) {
                 this.token = d.token;
                 localStorage.setItem("b2_token", d.token);
@@ -53,7 +66,18 @@ class RealtimeSyncClient {
         }
     }
 
-    // Live room + latest notifications. Returns { ok, role, session, elapsed, notifications }
+    // Viewer: tell the room your name. Returns { ok, name } or { ok:false, error }
+    async join(name) {
+        try {
+            const d = await this.rpc("app_join", { p_token: this.token, p_name: name });
+            if (d && d.ok) return { ok: true, name: d.name };
+            return { ok: false, error: (d && d.error) || "invalid" };
+        } catch (err) {
+            return { ok: false, error: "network" };
+        }
+    }
+
+    // Live room + notifications (+ member list for admin).
     async getState() {
         try {
             const d = await this.rpc("app_get_state", { p_token: this.token });
@@ -78,7 +102,8 @@ class RealtimeSyncClient {
                     role_a: s.roleA,
                     role_b: s.roleB,
                     timer_seconds: s.timerSeconds,
-                    is_timer_running: !!s.isTimerRunning
+                    is_timer_running: !!s.isTimerRunning,
+                    extra: { worked: !!s.worked }
                 }
             });
         } catch (err) {
@@ -100,5 +125,30 @@ class RealtimeSyncClient {
             console.error("notify error:", err);
             return { error: "network" };
         }
+    }
+
+    // Admin only: ban / unban a member
+    async setBan(id, banned) {
+        try {
+            return await this.rpc("app_set_ban", { p_token: this.token, p_id: id, p_banned: !!banned });
+        } catch (err) {
+            return { error: "network" };
+        }
+    }
+
+    // Admin only: remove a member from the list
+    async deleteMember(id) {
+        try {
+            return await this.rpc("app_delete_member", { p_token: this.token, p_id: id });
+        } catch (err) {
+            return { error: "network" };
+        }
+    }
+
+    // Viewer: leave the room (disappears from the online counter)
+    async leave() {
+        try {
+            await this.rpc("app_leave", { p_token: this.token });
+        } catch (err) { /* ignore */ }
     }
 }

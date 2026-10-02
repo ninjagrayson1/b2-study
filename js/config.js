@@ -6,7 +6,7 @@
  * or link your free Supabase project by filling in SUPABASE_URL and SUPABASE_ANON_KEY.
  */
 const CONFIG = {
-    // Supabase Credentials (Fill these in with your Supabase Project details)
+    // Supabase Credentials
     SUPABASE_URL: "https://kdytnnwheupcfwyfgyyp.supabase.co",
     SUPABASE_ANON_KEY: "sb_publishable_QNiO_yWEr5ChiDJnRwcx0g_nTRpoblx",
 
@@ -14,7 +14,7 @@ const CONFIG = {
     DEFAULT_ROOM: "B2-STUDY",
 
     // Real-Time Sync Polling Interval (in milliseconds)
-    POLL_INTERVAL_MS: 1500,
+    POLL_INTERVAL_MS: 1000,
 
     // Timer Duration (seconds)
     DEFAULT_TIMER_SECONDS: 300,

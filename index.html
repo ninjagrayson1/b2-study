@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>B2 Diskussion · Real-Time Study Group (Teil 2 & Teil 3)</title>
-  <link rel="stylesheet" href="css/style.css?v=2">
+  <link rel="stylesheet" href="css/style.css?v=3">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -22,6 +22,22 @@
     <button class="btn btn-primary btn-lg" id="loginBtn" onclick="submitLogin()">Enter</button>
   </div>
 </div>
+
+<!-- Name box (viewers, right after the access code) -->
+<div class="login-overlay" id="nameOverlay">
+  <div class="login-card">
+    <div class="login-icon">👋</div>
+    <h2>Who are you?</h2>
+    <p>Enter your name so the group leader knows who joined.</p>
+    <input type="text" id="nameInput" placeholder="YOUR NAME" maxlength="30" autocomplete="off" spellcheck="false" style="text-transform: none; letter-spacing: 0.02em;">
+    <div class="login-error" id="nameError"></div>
+    <button class="btn btn-primary btn-lg" id="nameBtn" onclick="submitName()">Join</button>
+    <button class="btn" style="margin-top: 10px; width: 100%;" onclick="logout()">← Back</button>
+  </div>
+</div>
+
+<!-- Admin toast (new member entered) -->
+<div class="toast" id="toast"></div>
 
 <div class="app-container">
   <!-- Top App Header -->
@@ -43,6 +59,9 @@
 
       <!-- Active User Profile Indicator -->
       <span class="pill" id="activeUserBadge">Loading user...</span>
+
+      <!-- Online members counter (admin only) -->
+      <button class="pill admin-only" id="onlineCounter" onclick="openMembersTab()" title="Members online now" style="cursor: pointer;">👥 <b id="onlineCount">0</b> online</button>
 
       <!-- Ring Group Button -->
       <button class="btn btn-call admin-only" onclick="callGroup()" title="Call or Ring Group Members">
@@ -74,8 +93,8 @@
     <button class="nav-btn active" data-tab="tab-live">🎙️ Live Session</button>
     <button class="nav-btn" data-tab="tab-topics">📚 All Topics (86)</button>
     <button class="nav-btn" data-tab="tab-redemittel">💡 Redemittel</button>
-    <button class="nav-btn" data-tab="tab-profiles">👤 Profiles</button>
-    <button class="nav-btn" data-tab="tab-scoreboard">🏆 Scoreboard</button>
+    <button class="nav-btn admin-only" data-tab="tab-profiles">👤 Profiles</button>
+    <button class="nav-btn admin-only" data-tab="tab-scoreboard">🏆 Scoreboard</button>
   </nav>
 
   <!-- ================= TAB 1: LIVE SESSION ================= -->
@@ -247,7 +266,19 @@
   </section>
 
   <!-- ================= TAB 4: PROFILES ================= -->
-  <section id="tab-profiles" class="tab-pane" style="display: none;">
+  <section id="tab-profiles" class="tab-pane admin-only" style="display: none;">
+    <!-- Live members who entered with the B2-grp code -->
+    <div class="card" style="margin-bottom: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+        <h2 style="font-size: 20px;">👥 Group Members (live)</h2>
+        <span class="pill" id="membersCountPill">0 online</span>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+        Everyone who entered with the group code. Delete removes them from the list (they can enter again). Ban blocks their device.
+      </p>
+      <div id="liveMembersList"></div>
+    </div>
+
     <div class="card">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <div>
@@ -307,7 +338,7 @@
   </section>
 
   <!-- ================= TAB 5: SCOREBOARD ================= -->
-  <section id="tab-scoreboard" class="tab-pane" style="display: none;">
+  <section id="tab-scoreboard" class="tab-pane admin-only" style="display: none;">
     <div class="grid-2col">
       <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -328,7 +359,10 @@
       </div>
 
       <div class="card">
-        <h2 style="font-size: 18px; margin-bottom: 12px;">Recent Practice Rounds</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h2 style="font-size: 18px;">Recent Practice Rounds</h2>
+          <button class="btn btn-danger admin-only" style="font-size: 12px; padding: 6px 10px;" onclick="clearHistory()">Clear all</button>
+        </div>
         <div id="historyList"></div>
       </div>
     </div>
@@ -336,10 +370,10 @@
 </div>
 
 <!-- Scripts -->
-<script src="js/config.js?v=2"></script>
-<script src="js/topics.js?v=2"></script>
-<script src="js/redemittel.js?v=2"></script>
-<script src="js/supabase-client.js?v=2"></script>
-<script src="js/app.js?v=2"></script>
+<script src="js/config.js?v=3"></script>
+<script src="js/topics.js?v=3"></script>
+<script src="js/redemittel.js?v=3"></script>
+<script src="js/supabase-client.js?v=3"></script>
+<script src="js/app.js?v=3"></script>
 </body>
 </html>

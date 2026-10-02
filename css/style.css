@@ -569,7 +569,6 @@ button {
   }
 }
 
-
 /* ================= ACCESS CODE LOGIN ================= */
 body.locked .app-container { display: none; }
 body.is-student .admin-only { display: none !important; }
@@ -584,7 +583,46 @@ body.is-student .admin-only { display: none !important; }
   padding: 20px;
   background: var(--bg-gradient), var(--bg);
 }
-body.locked .login-overlay { display: flex; }
+body.locked:not(.naming) #loginOverlay { display: flex; }
+body.naming #nameOverlay { display: flex; }
+
+/* Toast (admin: new member entered) */
+.toast {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translate(-50%, -140%);
+  z-index: 10000;
+  max-width: calc(100vw - 32px);
+  padding: 12px 18px;
+  background: var(--panel);
+  border: 1px solid var(--good);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  font-size: 14px;
+  font-weight: 700;
+  transition: transform 0.3s ease;
+  pointer-events: none;
+}
+.toast.show { transform: translate(-50%, 0); }
+
+/* Live members list */
+.member-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--panel-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.member-row.banned { border-color: var(--danger); background: var(--danger-bg); }
+.member-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line-light); flex-shrink: 0; }
+.member-dot.on { background: var(--good); box-shadow: 0 0 8px var(--good); }
 
 .login-card {
   width: 100%;

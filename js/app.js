@@ -32,7 +32,12 @@ const state = {
     isOnline: false,
     syncClient: null,
     speechUtterance: null,
-    theme: "dark"
+    theme: "dark",
+
+    // Group members (admin sees the list, viewers only know their own name)
+    myName: "",
+    members: [],
+    memberHighWater: null
 };
 
 // Helper to render Avatar (Image or Emoji)
@@ -76,10 +81,21 @@ async function initAuth() {
     if (input) {
         input.addEventListener("keydown", e => { if (e.key === "Enter") submitLogin(); });
     }
+    const nameInput = document.getElementById("nameInput");
+    if (nameInput) {
+        nameInput.addEventListener("keydown", e => { if (e.key === "Enter") submitName(); });
+    }
     if (state.syncClient.token) {
         const res = await state.syncClient.getState();
         if (res.ok) {
+            state.myName = res.me?.name || "";
             enterApp(res.role);
+            return;
+        }
+        if (res.error === "nojoin") { showName(); return; }
+        if (res.error === "banned") {
+            state.syncClient.clearToken();
+            showLogin("You are banned from this room.");
             return;
         }
         if (res.error === "auth") state.syncClient.clearToken();
@@ -90,6 +106,7 @@ async function initAuth() {
 function showLogin(message = "") {
     stopSyncLoop();
     document.body.classList.add("locked");
+    document.body.classList.remove("naming");
     const err = document.getElementById("loginError");
     if (err) err.textContent = message;
     const input = document.getElementById("loginCodeInput");
@@ -109,7 +126,13 @@ async function submitLogin() {
     if (btn) { btn.disabled = false; btn.textContent = "Enter"; }
 
     if (res.ok) {
-        enterApp(res.role);
+        if (res.role === "admin") {
+            enterApp(res.role);
+        } else {
+            showName();
+        }
+    } else if (res.error === "banned") {
+        if (err) err.textContent = "You are banned from this room.";
     } else if (res.error === "locked") {
         if (err) err.textContent = "Too many wrong tries. Wait a few minutes.";
     } else if (res.error === "network") {
@@ -120,21 +143,67 @@ async function submitLogin() {
     }
 }
 
+// ===== Viewer name step =====
+function showName(message = "") {
+    stopSyncLoop();
+    document.body.classList.add("locked", "naming");
+    const err = document.getElementById("nameError");
+    if (err) err.textContent = message;
+    const input = document.getElementById("nameInput");
+    if (input) {
+        input.value = state.myName || localStorage.getItem("b2_my_name") || "";
+        setTimeout(() => input.focus(), 50);
+    }
+}
+
+async function submitName() {
+    const input = document.getElementById("nameInput");
+    const btn = document.getElementById("nameBtn");
+    const err = document.getElementById("nameError");
+    const name = (input?.value || "").trim();
+    if (name.length < 2) { if (err) err.textContent = "Please enter your name (at least 2 letters)."; return; }
+
+    if (btn) { btn.disabled = true; btn.textContent = "Joining..."; }
+    const res = await state.syncClient.join(name);
+    if (btn) { btn.disabled = false; btn.textContent = "Join"; }
+
+    if (res.ok) {
+        state.myName = res.name;
+        localStorage.setItem("b2_my_name", res.name);
+        enterApp("student");
+    } else if (res.error === "banned") {
+        state.syncClient.clearToken();
+        showLogin("You are banned from this room.");
+    } else if (res.error === "auth") {
+        handleAuthLost();
+    } else if (res.error === "name") {
+        if (err) err.textContent = "Please enter your name (at least 2 letters).";
+    } else {
+        if (err) err.textContent = "Could not reach the server. Check your internet.";
+    }
+}
+
 function enterApp(serverRole) {
     state.userRole = serverRole === "admin" ? "ADMIN" : "MEMBER";
     state.isOnline = true;
-    document.body.classList.remove("locked");
+    state.members = [];
+    state.memberHighWater = null;
+    document.body.classList.remove("locked", "naming");
     document.body.classList.toggle("is-student", state.userRole !== "ADMIN");
     const badge = document.getElementById("roleBadge");
     if (badge) badge.textContent = state.userRole === "ADMIN" ? "👑 ADMIN" : "👀 VIEWER";
     updateOnlineBadge();
     renderAll();
+    renderMembers();
     startSyncLoop();
 }
 
 function logout() {
+    const wasViewer = !isAdmin();
+    if (wasViewer && state.syncClient.token) state.syncClient.leave();
     state.syncClient.clearToken();
     state.userRole = "MEMBER";
+    state.myName = "";
     clearInterval(state.timerInterval);
     state.isTimerRunning = false;
     showLogin();
@@ -217,7 +286,7 @@ function setupNavigation() {
 function randomize() {
     if (!isAdmin()) return;
     if (state.profiles.length < 2) {
-        alert("Please have at least 2 profiles to randomize pairs.");
+        alert("Please have at least 2 profiles to randomize pairs. Add profiles in the Profiles tab.");
         return;
     }
 
@@ -344,12 +413,14 @@ function markWorked() {
     renderTopicsList();
     renderScoreboard();
     renderProfiles();
+    broadcastSession();
 }
 
 function resetWorkedTopics() {
     if (!isAdmin()) return;
     state.workedTopicIds.clear();
     saveData();
+    broadcastSession();
     renderLiveSession();
     renderTopicsList();
     renderScoreboard();
@@ -531,7 +602,8 @@ async function broadcastSession() {
         roleA: state.roleA,
         roleB: state.roleB,
         timerSeconds: state.timerSeconds,
-        isTimerRunning: state.isTimerRunning
+        isTimerRunning: state.isTimerRunning,
+        worked: !!(state.currentTopic && state.workedTopicIds.has(state.currentTopic.id))
     };
 
     const res = await state.syncClient.setSession(session);
@@ -582,9 +654,15 @@ async function pollOnce() {
     pollBusy = true;
     try {
         const res = await state.syncClient.getState();
+        if (document.body.classList.contains("locked")) return; // logged out while waiting
 
         if (!res.ok) {
-            if (res.error === "auth") {
+            if (res.error === "banned") {
+                state.syncClient.clearToken();
+                showLogin("You were banned from this room.");
+            } else if (res.error === "nojoin") {
+                showName();
+            } else if (res.error === "auth") {
                 handleAuthLost();
             } else {
                 state.isOnline = false;
@@ -620,7 +698,23 @@ async function pollOnce() {
                 updateTimerDisplay();
             }
 
+            // "Worked" flag follows the admin live
+            if (state.currentTopic) {
+                const wasWorked = state.workedTopicIds.has(state.currentTopic.id);
+                const isWorked = !!(remote.extra && remote.extra.worked);
+                if (wasWorked !== isWorked) {
+                    if (isWorked) state.workedTopicIds.add(state.currentTopic.id);
+                    else state.workedTopicIds.delete(state.currentTopic.id);
+                    renderLiveSession();
+                }
+            }
+
             renderRoles();
+        }
+
+        // 1b. Admin: member list, online counter, "new member" toast
+        if (isAdmin() && Array.isArray(res.members)) {
+            handleMembersUpdate(res.members);
         }
 
         // 2. Notifications (newest first)
@@ -628,7 +722,7 @@ async function pollOnce() {
         if (notifs.length > 0) {
             const newest = notifs[0];
             if (newest.id > state.syncClient.lastNotificationId) {
-                if (state.syncClient.lastNotificationId !== 0 && newest.sender_name !== state.activeProfile?.name) {
+                if (state.syncClient.lastNotificationId !== 0 && (!isAdmin() || newest.sender_name !== state.activeProfile?.name)) {
                     playChime();
                     showNotificationBanner(newest.title, newest.message);
                     triggerBrowserNotification(newest.title, newest.message);
@@ -639,6 +733,142 @@ async function pollOnce() {
     } finally {
         pollBusy = false;
     }
+}
+
+// ===== Group members (admin) =====
+let toastQueue = [];
+let toastBusy = false;
+
+function showToast(message) {
+    toastQueue.push(message);
+    runToast();
+}
+
+function runToast() {
+    if (toastBusy || toastQueue.length === 0) return;
+    const el = document.getElementById("toast");
+    if (!el) { toastQueue = []; return; }
+    toastBusy = true;
+    el.textContent = toastQueue.shift();
+    el.classList.add("show");
+    setTimeout(() => el.classList.remove("show"), 3000);
+    setTimeout(() => { toastBusy = false; runToast(); }, 3400);
+}
+
+let membersSignature = "";
+
+function handleMembersUpdate(list) {
+    const online = list.filter(m => m.online).length;
+    const newest = list.reduce((mx, m) => Math.max(mx, m.joined_at || 0), 0);
+
+    if (state.memberHighWater === null) {
+        // first poll: remember who is already here, no toast
+        state.memberHighWater = newest;
+    } else {
+        list.filter(m => m.joined && !m.banned && m.joined_at && m.joined_at > state.memberHighWater)
+            .sort((a, b) => a.joined_at - b.joined_at)
+            .forEach(m => {
+                showToast(`🟢 New member "${m.name}" entered the room`);
+                playChime();
+            });
+        state.memberHighWater = Math.max(state.memberHighWater, newest);
+    }
+
+    const counter = document.getElementById("onlineCount");
+    if (counter) counter.textContent = online;
+
+    const sig = JSON.stringify(list);
+    state.members = list;
+    if (sig !== membersSignature) {
+        membersSignature = sig;
+        renderMembers();
+    }
+}
+
+function renderMembers() {
+    const box = document.getElementById("liveMembersList");
+    const pill = document.getElementById("membersCountPill");
+    const list = state.members || [];
+    const online = list.filter(m => m.online).length;
+    if (pill) pill.textContent = `${online} online · ${list.length} total`;
+    if (!box) return;
+
+    if (list.length === 0) {
+        box.innerHTML = '<div style="color: var(--text-muted); font-size: 13px;">Nobody has entered with the group code yet.</div>';
+        return;
+    }
+
+    const sorted = [...list].sort((a, b) =>
+        (Number(a.banned) - Number(b.banned)) ||
+        (Number(b.online) - Number(a.online)) ||
+        String(a.name).localeCompare(String(b.name)));
+
+    box.innerHTML = sorted.map(m => `
+        <div class="member-row ${m.banned ? 'banned' : ''}">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="member-dot ${m.online ? 'on' : ''}"></span>
+                <strong style="font-size: 15px;">${esc(m.name || "Guest")}</strong>
+                <span class="pill" style="font-size: 10px; padding: 2px 6px;">${m.banned ? "⛔ BANNED" : (m.online ? "ONLINE" : "OFFLINE")}</span>
+            </div>
+            <div style="display: flex; gap: 6px;">
+                ${m.banned
+                    ? `<button class="btn btn-primary" style="padding: 6px 10px; font-size: 12px;" onclick="unbanMember(${Number(m.id)})">✅ Unban</button>`
+                    : `<button class="btn btn-danger" style="padding: 6px 10px; font-size: 12px;" onclick="banMember(${Number(m.id)})">⛔ Ban</button>`}
+                <button class="btn" style="padding: 6px 10px; font-size: 12px;" onclick="deleteMemberAction(${Number(m.id)})">🗑️ Delete</button>
+            </div>
+        </div>
+    `).join("");
+}
+
+function openMembersTab() {
+    const btn = document.querySelector('[data-tab="tab-profiles"]');
+    if (btn) btn.click();
+}
+
+function memberById(id) {
+    return (state.members || []).find(m => Number(m.id) === Number(id));
+}
+
+async function afterMemberAction(res) {
+    if (res && res.error === "auth") { handleAuthLost(); return; }
+    if (res && res.error) { alert("Action failed: " + res.error); return; }
+    pollOnce();
+}
+
+async function banMember(id) {
+    if (!isAdmin()) return;
+    const m = memberById(id);
+    if (!confirm(`Ban "${m ? m.name : "this member"}"? They are kicked out now and their device can't enter again until you unban.`)) return;
+    afterMemberAction(await state.syncClient.setBan(id, true));
+}
+
+async function unbanMember(id) {
+    if (!isAdmin()) return;
+    afterMemberAction(await state.syncClient.setBan(id, false));
+}
+
+async function deleteMemberAction(id) {
+    if (!isAdmin()) return;
+    const m = memberById(id);
+    const extra = m && m.banned ? "\n\nThis also removes their ban." : "";
+    if (!confirm(`Delete "${m ? m.name : "this member"}" from the list? They are kicked out now, but can enter again with the group code.${extra}`)) return;
+    afterMemberAction(await state.syncClient.deleteMember(id));
+}
+
+// ===== History cleanup (admin) =====
+function deleteRound(idx) {
+    if (!isAdmin()) return;
+    state.history.splice(idx, 1);
+    saveData();
+    renderHistory();
+}
+
+function clearHistory() {
+    if (!isAdmin() || state.history.length === 0) return;
+    if (!confirm("Remove ALL practice rounds from the history?")) return;
+    state.history = [];
+    saveData();
+    renderHistory();
 }
 
 function updateOnlineBadge() {
@@ -1031,7 +1261,10 @@ function renderHistory() {
                 <b>${esc(h.title)}</b>
                 <div style="font-size: 11px; color: var(--text-muted);">${esc(h.roleA)} (A) ➔ ${esc(h.roleB)} (B)</div>
             </div>
-            <span style="font-size: 11px; color: var(--accent2);">${h.time}</span>
+            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                <span style="font-size: 11px; color: var(--accent2);">${h.time}</span>
+                <button class="btn btn-danger admin-only" style="padding: 3px 8px; font-size: 11px;" title="Remove this round" onclick="deleteRound(${idx})">🗑️</button>
+            </div>
         </div>
     `).join("");
 }
