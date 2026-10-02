@@ -25,8 +25,8 @@ const state = {
     // Avatar state
     selectedAvatar: "🎓",
 
-    // Exam section filter: "ALL", "2", "3"
-    selectedTeil: "ALL",
+    // Exam section filter: "2" (Teil 2) or "3" (Teil 3)
+    selectedTeil: "2",
 
     // Cloud connection
     isOnline: false,
@@ -88,11 +88,24 @@ async function initAuth() {
     if (state.syncClient.token) {
         const res = await state.syncClient.getState();
         if (res.ok) {
-            state.myName = res.me?.name || "";
+            state.myName = res.me?.name || localStorage.getItem("b2_my_name") || "";
             enterApp(res.role);
             return;
         }
-        if (res.error === "nojoin") { showName(); return; }
+        if (res.error === "nojoin") {
+            // Check if student already has a remembered name on this phone/browser
+            const savedName = localStorage.getItem("b2_my_name");
+            if (savedName && savedName.trim().length >= 2) {
+                const joinRes = await state.syncClient.join(savedName.trim());
+                if (joinRes.ok) {
+                    state.myName = joinRes.name;
+                    enterApp("student");
+                    return;
+                }
+            }
+            showName();
+            return;
+        }
         if (res.error === "banned") {
             state.syncClient.clearToken();
             showLogin("You are banned from this room.");
@@ -129,6 +142,16 @@ async function submitLogin() {
         if (res.role === "admin") {
             enterApp(res.role);
         } else {
+            // Auto-join if user has an existing saved name on their device!
+            const savedName = localStorage.getItem("b2_my_name");
+            if (savedName && savedName.trim().length >= 2) {
+                const joinRes = await state.syncClient.join(savedName.trim());
+                if (joinRes.ok) {
+                    state.myName = joinRes.name;
+                    enterApp("student");
+                    return;
+                }
+            }
             showName();
         }
     } else if (res.error === "banned") {
@@ -220,6 +243,8 @@ function loadStoredData() {
     state.theme = localStorage.getItem("b2_theme") || "dark";
     state.roomCode = localStorage.getItem("b2_room_code") || CONFIG.DEFAULT_ROOM;
     state.userRole = "MEMBER"; // real role is set only by a valid access code
+    state.myName = localStorage.getItem("b2_my_name") || "";
+    state.selectedTeil = localStorage.getItem("b2_selected_teil") || "2";
 
     const storedWorked = localStorage.getItem("b2_worked_topics");
     if (storedWorked) {
@@ -246,8 +271,8 @@ function loadStoredData() {
     const activeId = localStorage.getItem("b2_active_profile_id");
     state.activeProfile = state.profiles.find(p => p.id === activeId) || state.profiles[0];
 
-    // Default first topic
-    state.currentTopic = EXERCISES[0];
+    // Default first topic (Teil 2 by default)
+    state.currentTopic = EXERCISES_TEIL2[0] || EXERCISES[0];
     state.roleA = state.profiles[0]?.name || "Grayson";
     state.roleB = state.profiles[1]?.name || "—";
 }
@@ -418,12 +443,19 @@ function markWorked() {
 
 function resetWorkedTopics() {
     if (!isAdmin()) return;
+    if (!confirm("Are you sure you want to reset all worked topics and scoreboard progress for a new study cycle?")) return;
+
     state.workedTopicIds.clear();
+    state.profiles.forEach(p => {
+        p.texts = 0;
+        p.starts = 0;
+    });
+
+    saveProfiles();
     saveData();
     broadcastSession();
-    renderLiveSession();
-    renderTopicsList();
-    renderScoreboard();
+    renderAll();
+    showToast("🔄 Study cycle reset: 0 topics worked, scores reset");
 }
 
 // Timer Logic
@@ -803,21 +835,66 @@ function renderMembers() {
         (Number(b.online) - Number(a.online)) ||
         String(a.name).localeCompare(String(b.name)));
 
-    box.innerHTML = sorted.map(m => `
+    box.innerHTML = sorted.map(m => {
+        const cleanName = m.name || "Guest";
+        const inPool = state.profiles.some(p => p.name.toLowerCase() === cleanName.toLowerCase());
+        return `
         <div class="member-row ${m.banned ? 'banned' : ''}">
-            <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                 <span class="member-dot ${m.online ? 'on' : ''}"></span>
-                <strong style="font-size: 15px;">${esc(m.name || "Guest")}</strong>
+                <strong style="font-size: 15px;">${esc(cleanName)}</strong>
                 <span class="pill" style="font-size: 10px; padding: 2px 6px;">${m.banned ? "⛔ BANNED" : (m.online ? "ONLINE" : "OFFLINE")}</span>
+                ${inPool ? '<span class="pill" style="font-size: 10px; padding: 2px 6px; color: var(--good); border-color: var(--good);">✓ in candidate pool</span>' : ''}
             </div>
-            <div style="display: flex; gap: 6px;">
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                <button class="btn ${inPool ? '' : 'btn-primary'}" style="padding: 6px 10px; font-size: 12px;" onclick="toggleMemberPool('${esc(cleanName)}')">
+                    ${inPool ? '✓ Added' : '➕ Add to Pool'}
+                </button>
                 ${m.banned
                     ? `<button class="btn btn-primary" style="padding: 6px 10px; font-size: 12px;" onclick="unbanMember(${Number(m.id)})">✅ Unban</button>`
                     : `<button class="btn btn-danger" style="padding: 6px 10px; font-size: 12px;" onclick="banMember(${Number(m.id)})">⛔ Ban</button>`}
                 <button class="btn" style="padding: 6px 10px; font-size: 12px;" onclick="deleteMemberAction(${Number(m.id)})">🗑️ Delete</button>
             </div>
         </div>
-    `).join("");
+        `;
+    }).join("");
+}
+
+function toggleMemberPool(name) {
+    if (!isAdmin()) return;
+    const cleanName = (name || "").trim();
+    if (!cleanName) return;
+
+    const existingIdx = state.profiles.findIndex(p => p.name.toLowerCase() === cleanName.toLowerCase());
+    if (existingIdx >= 0) {
+        if (state.profiles.length <= 1) {
+            alert("Keep at least 1 member in the pool.");
+            return;
+        }
+        state.profiles.splice(existingIdx, 1);
+        saveProfiles();
+        renderMembers();
+        renderProfiles();
+        renderScoreboard();
+        showToast(`Removed "${cleanName}" from pool`);
+    } else {
+        const avatars = ["🎓", "🌟", "💡", "🚀", "🦊", "🦁", "🐼", "🦉", "⚡", "🎯", "📚", "☕"];
+        const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)];
+        state.profiles.push({
+            id: "p_" + Date.now(),
+            name: cleanName,
+            avatar: randomAvatar,
+            role: "MEMBER",
+            texts: 0,
+            starts: 0,
+            bio: "B2 Study Partner"
+        });
+        saveProfiles();
+        renderMembers();
+        renderProfiles();
+        renderScoreboard();
+        showToast(`➕ Added "${cleanName}" to Pair Pool!`);
+    }
 }
 
 function openMembersTab() {
@@ -933,11 +1010,16 @@ function renderLiveSession() {
 function renderRoles() {
     const aBox = document.getElementById("roleABox");
     const bBox = document.getElementById("roleBBox");
-    const myName = state.activeProfile?.name || "";
+
+    // Only Grayson (Admin) is identified as Grayson.
+    // Viewers are identified ONLY by their student name (state.myName).
+    const myName = isAdmin()
+        ? (state.activeProfile?.name || "Grayson")
+        : (state.myName || localStorage.getItem("b2_my_name") || "");
 
     const isTeil2 = state.currentTopic?.teil === 2;
-    const isMeA = state.roleA.toLowerCase() === myName.toLowerCase();
-    const isMeB = state.roleB.toLowerCase() === myName.toLowerCase();
+    const isMeA = Boolean(myName && state.roleA && state.roleA.toLowerCase() === myName.toLowerCase());
+    const isMeB = Boolean(myName && state.roleB && state.roleB.toLowerCase() === myName.toLowerCase());
 
     const profA = state.profiles.find(p => p.name.toLowerCase() === state.roleA.toLowerCase());
     const profB = state.profiles.find(p => p.name.toLowerCase() === state.roleB.toLowerCase());
@@ -1322,20 +1404,35 @@ function esc(str) {
     }[c]));
 }
 
-// Section Selector for Randomizer
+// Section Selector for Randomizer (Teil 2 or Teil 3 only)
 function setExamSection(sec) {
-    state.selectedTeil = sec;
+    state.selectedTeil = sec === "3" ? "3" : "2";
+    localStorage.setItem("b2_selected_teil", state.selectedTeil);
 
-    const btnAll = document.getElementById("modeBtnAll");
     const btnT2 = document.getElementById("modeBtnT2");
     const btnT3 = document.getElementById("modeBtnT3");
 
-    if (btnAll) btnAll.style.background = sec === "ALL" ? "var(--accent)" : "var(--panel-card)";
-    if (btnAll) btnAll.style.color = sec === "ALL" ? "#fff" : "var(--text)";
-    if (btnT2) btnT2.style.background = sec === "2" ? "var(--accent)" : "var(--panel-card)";
-    if (btnT2) btnT2.style.color = sec === "2" ? "#fff" : "var(--text)";
-    if (btnT3) btnT3.style.background = sec === "3" ? "var(--accent)" : "var(--panel-card)";
-    if (btnT3) btnT3.style.color = sec === "3" ? "#fff" : "var(--text)";
+    if (btnT2) {
+        btnT2.className = state.selectedTeil === "2" ? "btn btn-primary" : "btn";
+        btnT2.style.background = state.selectedTeil === "2" ? "var(--accent)" : "var(--panel-card)";
+        btnT2.style.color = state.selectedTeil === "2" ? "#fff" : "var(--text)";
+    }
+    if (btnT3) {
+        btnT3.className = state.selectedTeil === "3" ? "btn btn-primary" : "btn";
+        btnT3.style.background = state.selectedTeil === "3" ? "var(--accent)" : "var(--panel-card)";
+        btnT3.style.color = state.selectedTeil === "3" ? "#fff" : "var(--text)";
+    }
+
+    // Switch topic if current topic does not belong to selected section
+    const currentTeil = state.currentTopic?.teil || 2;
+    if (Number(currentTeil) !== Number(state.selectedTeil)) {
+        const pool = state.selectedTeil === "2" ? EXERCISES_TEIL2 : EXERCISES_TEIL3;
+        const fresh = pool.find(t => !state.workedTopicIds.has(t.id)) || pool[0];
+        state.currentTopic = fresh;
+        resetTimer();
+        broadcastSession();
+        renderLiveSession();
+    }
 }
 
 // Filter Redemittel Phrases
