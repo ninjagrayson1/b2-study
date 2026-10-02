@@ -1,10 +1,10 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>B2 Diskussion · Real-Time Study Group (Teil 2 & Teil 3)</title>
-  <link rel="stylesheet" href="css/style.css?v=4">
+  <link rel="stylesheet" href="css/style.css?v=5">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -113,54 +113,65 @@
 
           <div class="roles-grid">
             <!-- Role A Card with Avatar -->
-            <div class="role-box" id="roleABox">
-              <div class="role-tag">
-                <span id="roleATag">A · STARTS</span>
-                <span class="me-badge" id="roleAMe" style="display: none;">YOU</span>
+            <div class="role-box role-card-a" id="roleABox">
+              <div class="role-cover-banner banner-a">
+                <div class="role-tag">
+                  <span id="roleATag">A · STARTS</span>
+                  <span class="me-badge" id="roleAMe" style="display: none;">YOU</span>
+                </div>
               </div>
-              <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                <div id="roleAAvatar"></div>
-                <strong class="role-name" id="roleAName" style="margin-top: 0;">Grayson</strong>
+              <div class="role-body">
+                <div class="role-avatar-row">
+                  <div id="roleAAvatar" class="role-avatar-container"></div>
+                  <span class="role-live-badge"><span class="pulse-dot"></span> Active</span>
+                </div>
+                <strong class="role-name" id="roleAName">Grayson</strong>
+                <span class="role-desc" id="roleADesc">Speaker</span>
               </div>
             </div>
 
             <!-- Role B Card with Avatar -->
-            <div class="role-box" id="roleBBox">
-              <div class="role-tag">
-                <span id="roleBTag">B · PARTNER</span>
-                <span class="me-badge" id="roleBMe" style="display: none;">YOU</span>
+            <div class="role-box role-card-b" id="roleBBox">
+              <div class="role-cover-banner banner-b">
+                <div class="role-tag">
+                  <span id="roleBTag">B · PARTNER</span>
+                  <span class="me-badge" id="roleBMe" style="display: none;">YOU</span>
+                </div>
               </div>
-              <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
-                <div id="roleBAvatar"></div>
-                <strong class="role-name" id="roleBName" style="margin-top: 0;">&mdash;</strong>
+              <div class="role-body">
+                <div class="role-avatar-row">
+                  <div id="roleBAvatar" class="role-avatar-container"></div>
+                  <span class="role-live-badge"><span class="pulse-dot"></span> Partner</span>
+                </div>
+                <strong class="role-name" id="roleBName">&mdash;</strong>
+                <span class="role-desc" id="roleBDesc">Discussion Partner</span>
               </div>
             </div>
           </div>
 
           <!-- Quick Role Switching Buttons -->
-          <div class="admin-only" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 14px;">
-            <button class="btn" style="padding: 6px 4px; font-size: 11px;" onclick="swapRoles()">⇄ Swap</button>
-            <button class="btn" style="padding: 6px 4px; font-size: 11px;" onclick="changePartner()">👥 Partner</button>
-            <button class="btn" style="padding: 6px 4px; font-size: 11px;" onclick="changeBothRoles()">🎲 New Pair</button>
+          <div class="admin-only role-actions-grid" style="margin-bottom: 16px;">
+            <button class="btn btn-pill-action" onclick="swapRoles()">⇄ Swap</button>
+            <button class="btn btn-pill-action" onclick="changePartner()">👥 Partner</button>
+            <button class="btn btn-pill-action" onclick="changeBothRoles()">🎲 New Pair</button>
           </div>
 
           <!-- 5-Minute Timer -->
           <div class="timer-card">
-            <div id="timerTitle" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); font-weight: 800;">5-Minute Discussion Timer</div>
+            <div id="timerTitle" class="timer-title">5-Minute Discussion Timer</div>
             <div class="timer-digits" id="timerDigits">05:00</div>
             <div class="timer-actions admin-only">
-              <button class="btn btn-primary" id="timerPlayBtn" onclick="startTimer()">▶ Start</button>
-              <button class="btn" onclick="resetTimer()">↺ Reset</button>
+              <button class="btn btn-primary btn-pill-lg" id="timerPlayBtn" onclick="startTimer()">▶ Start</button>
+              <button class="btn btn-pill-lg" onclick="resetTimer()">↺ Reset</button>
             </div>
           </div>
 
-          <!-- Exam Section Mode Selector for Randomizer -->
-          <div class="admin-only" style="margin-bottom: 12px;">
-            <div style="font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Randomize Section:</div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;">
-              <button class="btn" id="modeBtnAll" style="padding: 6px 4px; font-size: 11px; background: var(--accent); color: #fff;" onclick="setExamSection('ALL')">All</button>
-              <button class="btn" id="modeBtnT2" style="padding: 6px 4px; font-size: 11px;" onclick="setExamSection('2')">Teil 2</button>
-              <button class="btn" id="modeBtnT3" style="padding: 6px 4px; font-size: 11px;" onclick="setExamSection('3')">Teil 3</button>
+          <!-- Exam Section Mode Selector for Randomizer (Teil 2 or Teil 3 only) -->
+          <div class="admin-only" style="margin-bottom: 14px;">
+            <div style="font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;">Randomize Section:</div>
+            <div class="section-switch-grid">
+              <button class="btn btn-segmented active" id="modeBtnT2" onclick="setExamSection('2')">🎤 Teil 2</button>
+              <button class="btn btn-segmented" id="modeBtnT3" onclick="setExamSection('3')">🤝 Teil 3</button>
             </div>
           </div>
 
@@ -341,17 +352,17 @@
   <section id="tab-scoreboard" class="tab-pane admin-only" style="display: none;">
     <div class="grid-2col">
       <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <h2 style="font-size: 18px;">Leaderboard</h2>
-          <button class="btn btn-danger admin-only" style="font-size: 12px; padding: 6px 10px;" onclick="if(confirm('Reset all worked topics?')) resetWorkedTopics();">Reset Cycle</button>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+          <h2 style="font-size: 18px; font-weight: 800;">🏆 Leaderboard</h2>
+          <button class="btn btn-danger btn-pill-sm admin-only" onclick="resetWorkedTopics()">🔄 Reset Cycle</button>
         </div>
         <table style="width: 100%; border-collapse: collapse;">
           <thead>
             <tr style="border-bottom: 1px solid var(--line); font-size: 11px; text-transform: uppercase; color: var(--text-muted); text-align: left;">
-              <th style="padding: 8px 6px;">Member</th>
-              <th style="padding: 8px 6px; text-align: center;">Texts</th>
-              <th style="padding: 8px 6px; text-align: center;">Role A</th>
-              <th style="padding: 8px 6px; text-align: right;">Progress</th>
+              <th style="padding: 10px 8px;">Member</th>
+              <th style="padding: 10px 8px; text-align: center;">Texts</th>
+              <th style="padding: 10px 8px; text-align: center;">Role A</th>
+              <th style="padding: 10px 8px; text-align: right;">Progress</th>
             </tr>
           </thead>
           <tbody id="scoreboardTable"></tbody>
@@ -359,9 +370,9 @@
       </div>
 
       <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <h2 style="font-size: 18px;">Recent Practice Rounds</h2>
-          <button class="btn btn-danger admin-only" style="font-size: 12px; padding: 6px 10px;" onclick="clearHistory()">Clear all</button>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+          <h2 style="font-size: 18px; font-weight: 800;">Recent Practice Rounds</h2>
+          <button class="btn btn-danger btn-pill-sm admin-only" onclick="clearHistory()">🗑️ Clear all</button>
         </div>
         <div id="historyList"></div>
       </div>
@@ -374,6 +385,6 @@
 <script src="js/topics.js?v=3"></script>
 <script src="js/redemittel.js?v=3"></script>
 <script src="js/supabase-client.js?v=3"></script>
-<script src="js/app.js?v=4"></script>
+<script src="js/app.js?v=5"></script>
 </body>
 </html>

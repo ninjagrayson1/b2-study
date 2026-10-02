@@ -1028,17 +1028,21 @@ function renderRoles() {
 
     if (aBox) {
         document.getElementById("roleAName").textContent = state.roleA;
-        document.getElementById("roleAAvatar").innerHTML = renderAvatarHtml(avatarA, 36);
+        document.getElementById("roleAAvatar").innerHTML = renderAvatarHtml(avatarA, 52);
         document.getElementById("roleAMe").style.display = isMeA ? "inline-block" : "none";
         document.getElementById("roleATag").textContent = isTeil2 ? "A · REFERENT(IN)" : "A · STARTS PLANNING";
+        const descA = document.getElementById("roleADesc");
+        if (descA) descA.textContent = isTeil2 ? "Thema präsentieren" : "Gemeinsam planen (Starter)";
         aBox.classList.toggle("highlight-me", isMeA);
     }
 
     if (bBox) {
         document.getElementById("roleBName").textContent = state.roleB;
-        document.getElementById("roleBAvatar").innerHTML = renderAvatarHtml(avatarB, 36);
+        document.getElementById("roleBAvatar").innerHTML = renderAvatarHtml(avatarB, 52);
         document.getElementById("roleBMe").style.display = isMeB ? "inline-block" : "none";
         document.getElementById("roleBTag").textContent = isTeil2 ? "B · FEEDBACK & FRAGEN" : "B · PARTNER";
+        const descB = document.getElementById("roleBDesc");
+        if (descB) descB.textContent = isTeil2 ? "Feedback & Fragen stellen" : "Vorschläge & Einigung";
         bBox.classList.toggle("highlight-me", isMeB);
     }
 
@@ -1413,14 +1417,14 @@ function setExamSection(sec) {
     const btnT3 = document.getElementById("modeBtnT3");
 
     if (btnT2) {
-        btnT2.className = state.selectedTeil === "2" ? "btn btn-primary" : "btn";
-        btnT2.style.background = state.selectedTeil === "2" ? "var(--accent)" : "var(--panel-card)";
-        btnT2.style.color = state.selectedTeil === "2" ? "#fff" : "var(--text)";
+        btnT2.className = `btn btn-segmented ${state.selectedTeil === "2" ? "active" : ""}`;
+        btnT2.style.background = "";
+        btnT2.style.color = "";
     }
     if (btnT3) {
-        btnT3.className = state.selectedTeil === "3" ? "btn btn-primary" : "btn";
-        btnT3.style.background = state.selectedTeil === "3" ? "var(--accent)" : "var(--panel-card)";
-        btnT3.style.color = state.selectedTeil === "3" ? "#fff" : "var(--text)";
+        btnT3.className = `btn btn-segmented ${state.selectedTeil === "3" ? "active" : ""}`;
+        btnT3.style.background = "";
+        btnT3.style.color = "";
     }
 
     // Switch topic if current topic does not belong to selected section
