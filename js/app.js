@@ -54,8 +54,8 @@ document.addEventListener("DOMContentLoaded", () => {
     setupEventListeners();
     requestNotificationPermission();
 
-    // Start Realtime Polling
-    startSyncLoop();
+    // Start login gate (starts realtime polling once a valid code is entered)
+    initAuth();
 
     // Initial render
     renderAll();
@@ -64,17 +64,93 @@ document.addEventListener("DOMContentLoaded", () => {
 // Setup Sync Client
 function initSyncClient() {
     state.syncClient = new RealtimeSyncClient();
-    state.syncClient.testConnection().then(online => {
-        state.isOnline = online;
-        updateOnlineBadge();
-    });
+}
+
+function isAdmin() {
+    return state.userRole === "ADMIN";
+}
+
+// ===== Access code login =====
+async function initAuth() {
+    const input = document.getElementById("loginCodeInput");
+    if (input) {
+        input.addEventListener("keydown", e => { if (e.key === "Enter") submitLogin(); });
+    }
+    if (state.syncClient.token) {
+        const res = await state.syncClient.getState();
+        if (res.ok) {
+            enterApp(res.role);
+            return;
+        }
+        if (res.error === "auth") state.syncClient.clearToken();
+    }
+    showLogin();
+}
+
+function showLogin(message = "") {
+    stopSyncLoop();
+    document.body.classList.add("locked");
+    const err = document.getElementById("loginError");
+    if (err) err.textContent = message;
+    const input = document.getElementById("loginCodeInput");
+    if (input) { input.value = ""; setTimeout(() => input.focus(), 50); }
+}
+
+async function submitLogin() {
+    const input = document.getElementById("loginCodeInput");
+    const btn = document.getElementById("loginBtn");
+    const err = document.getElementById("loginError");
+    const code = (input?.value || "").trim();
+    if (!code) { if (err) err.textContent = "Please enter the access code."; return; }
+    if (!state.syncClient.isConfigured()) { if (err) err.textContent = "Server is not configured."; return; }
+
+    if (btn) { btn.disabled = true; btn.textContent = "Checking..."; }
+    const res = await state.syncClient.login(code);
+    if (btn) { btn.disabled = false; btn.textContent = "Enter"; }
+
+    if (res.ok) {
+        enterApp(res.role);
+    } else if (res.error === "locked") {
+        if (err) err.textContent = "Too many wrong tries. Wait a few minutes.";
+    } else if (res.error === "network") {
+        if (err) err.textContent = "Could not reach the server. Check your internet.";
+    } else {
+        if (err) err.textContent = "Wrong code. Try again.";
+        if (input) { input.value = ""; input.focus(); }
+    }
+}
+
+function enterApp(serverRole) {
+    state.userRole = serverRole === "admin" ? "ADMIN" : "MEMBER";
+    state.isOnline = true;
+    document.body.classList.remove("locked");
+    document.body.classList.toggle("is-student", state.userRole !== "ADMIN");
+    const badge = document.getElementById("roleBadge");
+    if (badge) badge.textContent = state.userRole === "ADMIN" ? "👑 ADMIN" : "👀 VIEWER";
+    updateOnlineBadge();
+    renderAll();
+    startSyncLoop();
+}
+
+function logout() {
+    state.syncClient.clearToken();
+    state.userRole = "MEMBER";
+    clearInterval(state.timerInterval);
+    state.isTimerRunning = false;
+    showLogin();
+}
+
+function handleAuthLost() {
+    state.syncClient.clearToken();
+    state.userRole = "MEMBER";
+    showLogin("Session ended. Enter the code again.");
 }
 
 // Load Persistent Data from LocalStorage
 function loadStoredData() {
     state.theme = localStorage.getItem("b2_theme") || "dark";
     state.roomCode = localStorage.getItem("b2_room_code") || CONFIG.DEFAULT_ROOM;
-    state.userRole = localStorage.getItem("b2_user_role") || "ADMIN";
+    state.userRole = "MEMBER"; // real role is set only by a valid access code
 
     const storedWorked = localStorage.getItem("b2_worked_topics");
     if (storedWorked) {
@@ -100,7 +176,6 @@ function loadStoredData() {
     // Set Active Profile
     const activeId = localStorage.getItem("b2_active_profile_id");
     state.activeProfile = state.profiles.find(p => p.id === activeId) || state.profiles[0];
-    state.userRole = state.activeProfile.role;
 
     // Default first topic
     state.currentTopic = EXERCISES[0];
@@ -140,6 +215,7 @@ function setupNavigation() {
 
 // Randomize Round (Admin only)
 function randomize() {
+    if (!isAdmin()) return;
     if (state.profiles.length < 2) {
         alert("Please have at least 2 profiles to randomize pairs.");
         return;
@@ -205,6 +281,7 @@ function randomize() {
 }
 
 function selectSpecificTopic(id) {
+    if (!isAdmin()) return;
     const topic = EXERCISES.find(t => t.id === id);
     if (!topic) return;
 
@@ -221,6 +298,7 @@ function selectSpecificTopic(id) {
 
 // Roles Controls
 function swapRoles() {
+    if (!isAdmin()) return;
     const temp = state.roleA;
     state.roleA = state.roleB;
     state.roleB = temp;
@@ -229,6 +307,7 @@ function swapRoles() {
 }
 
 function changePartner() {
+    if (!isAdmin()) return;
     const pool = state.profiles.map(p => p.name).filter(n => n !== state.roleA);
     if (pool.length > 0) {
         state.roleB = pool[Math.floor(Math.random() * pool.length)];
@@ -238,6 +317,7 @@ function changePartner() {
 }
 
 function changeBothRoles() {
+    if (!isAdmin()) return;
     if (state.profiles.length < 2) return;
     const shuffled = [...state.profiles].sort(() => 0.5 - Math.random());
     state.roleA = shuffled[0].name;
@@ -248,7 +328,7 @@ function changeBothRoles() {
 
 // Mark Worked
 function markWorked() {
-    if (!state.currentTopic) return;
+    if (!isAdmin() || !state.currentTopic) return;
     state.workedTopicIds.add(state.currentTopic.id);
 
     // Update stats for role A and B
@@ -267,6 +347,7 @@ function markWorked() {
 }
 
 function resetWorkedTopics() {
+    if (!isAdmin()) return;
     state.workedTopicIds.clear();
     saveData();
     renderLiveSession();
@@ -276,7 +357,7 @@ function resetWorkedTopics() {
 
 // Timer Logic
 function startTimer() {
-    if (state.isTimerRunning) return;
+    if (!isAdmin() || state.isTimerRunning) return;
     state.isTimerRunning = true;
     renderTimerControls();
 
@@ -298,6 +379,7 @@ function startTimer() {
 }
 
 function pauseTimer() {
+    if (!isAdmin()) return;
     state.isTimerRunning = false;
     clearInterval(state.timerInterval);
     renderTimerControls();
@@ -305,6 +387,7 @@ function pauseTimer() {
 }
 
 function resetTimer() {
+    if (!isAdmin()) return;
     state.isTimerRunning = false;
     clearInterval(state.timerInterval);
     state.timerSeconds = CONFIG.DEFAULT_TIMER_SECONDS;
@@ -398,9 +481,10 @@ function playChime() {
 
 // Calling & Notification System
 function callGroup(customMsg = "") {
+    if (!isAdmin()) return;
     const sender = state.activeProfile ? state.activeProfile.name : "Admin";
     const title = `📢 Study Call from ${sender}!`;
-    const message = customMsg || `Time for German B2 Speaking Practice! Join room ${state.roomCode} now!`;
+    const message = customMsg || `Time for German B2 Speaking Practice! Join the study room now!`;
 
     playChime();
     showNotificationBanner(title, message);
@@ -437,9 +521,8 @@ function showNotificationBanner(title, message) {
 
 // Real-Time Cloud Synchronization
 async function broadcastSession() {
-    if (!state.syncClient) return;
+    if (!state.syncClient || !isAdmin()) return;
     const session = {
-        roomCode: state.roomCode,
         adminName: state.activeProfile?.name || "Admin",
         topicId: state.currentTopic?.id || "",
         topicTitle: state.currentTopic?.title || "",
@@ -451,53 +534,98 @@ async function broadcastSession() {
         isTimerRunning: state.isTimerRunning
     };
 
-    await state.syncClient.upsertSession(session);
+    const res = await state.syncClient.setSession(session);
+    if (res && res.error === "auth") handleAuthLost();
 }
 
 async function broadcastNotification(title, message) {
-    if (!state.syncClient) return;
+    if (!state.syncClient || !isAdmin()) return;
     const sender = state.activeProfile?.name || "Admin";
-    await state.syncClient.sendNotification(state.roomCode, sender, title, message);
+    const res = await state.syncClient.notify(sender, title, message);
+    if (res && res.error === "auth") handleAuthLost();
+}
+
+let syncTimer = null;
+let studentTicker = null;
+let pollBusy = false;
+
+function stopSyncLoop() {
+    clearInterval(syncTimer);
+    clearInterval(studentTicker);
+    syncTimer = null;
+    studentTicker = null;
 }
 
 function startSyncLoop() {
-    setInterval(async () => {
-        if (!state.syncClient || !state.syncClient.isConfigured()) return;
+    stopSyncLoop();
+    if (!state.syncClient || !state.syncClient.isConfigured()) return;
 
-        // 1. Sync session state for members
-        if (state.userRole === "MEMBER") {
-            const remote = await state.syncClient.fetchSession(state.roomCode);
-            if (remote) {
-                state.isOnline = true;
+    state.syncClient.lastNotificationId = 0;
+    pollOnce();
+    syncTimer = setInterval(pollOnce, CONFIG.POLL_INTERVAL_MS);
+
+    // Viewers: count the timer down smoothly between polls
+    studentTicker = setInterval(() => {
+        if (isAdmin() || !state.isTimerRunning) return;
+        if (state.timerSeconds > 0) {
+            state.timerSeconds--;
+            updateTimerDisplay();
+        } else {
+            state.isTimerRunning = false;
+            playChime();
+        }
+    }, 1000);
+}
+
+async function pollOnce() {
+    if (pollBusy) return;
+    pollBusy = true;
+    try {
+        const res = await state.syncClient.getState();
+
+        if (!res.ok) {
+            if (res.error === "auth") {
+                handleAuthLost();
+            } else {
+                state.isOnline = false;
                 updateOnlineBadge();
-
-                // Check if topic changed
-                if (remote.topic_id && (!state.currentTopic || state.currentTopic.id !== remote.topic_id)) {
-                    state.currentTopic = EXERCISES.find(t => t.id === remote.topic_id) || {
-                        id: remote.topic_id,
-                        title: remote.topic_title,
-                        text: remote.topic_text,
-                        ar: remote.topic_ar
-                    };
-                    renderLiveSession();
-                }
-
-                state.roleA = remote.role_a || state.roleA;
-                state.roleB = remote.role_b || state.roleB;
-
-                // Sync remote timer
-                if (typeof remote.timer_seconds === "number" && !state.isTimerRunning) {
-                    state.timerSeconds = remote.timer_seconds;
-                    updateTimerDisplay();
-                }
-
-                renderRoles();
             }
+            return;
         }
 
-        // 2. Fetch notifications
-        const notifs = await state.syncClient.fetchRecentNotifications(state.roomCode);
-        if (notifs && notifs.length > 0) {
+        state.isOnline = true;
+        updateOnlineBadge();
+
+        // 1. Viewers follow the admin's live session
+        const remote = res.session;
+        if (!isAdmin() && remote) {
+            if (remote.topic_id && (!state.currentTopic || state.currentTopic.id !== remote.topic_id)) {
+                state.currentTopic = EXERCISES.find(t => t.id === remote.topic_id) || {
+                    id: remote.topic_id,
+                    title: remote.topic_title,
+                    text: remote.topic_text,
+                    ar: remote.topic_ar
+                };
+                renderLiveSession();
+            }
+
+            state.roleA = remote.role_a || state.roleA;
+            state.roleB = remote.role_b || state.roleB;
+
+            if (typeof remote.timer_seconds === "number") {
+                const running = !!remote.is_timer_running;
+                const elapsed = Math.floor(res.elapsed || 0);
+                state.isTimerRunning = running;
+                state.timerSeconds = running ? Math.max(0, remote.timer_seconds - elapsed) : remote.timer_seconds;
+                updateTimerDisplay();
+            }
+
+            renderRoles();
+        }
+
+        // 2. Notifications (newest first)
+        const notifs = res.notifications || [];
+        if (notifs.length > 0) {
             const newest = notifs[0];
             if (newest.id > state.syncClient.lastNotificationId) {
                 if (state.syncClient.lastNotificationId !== 0 && newest.sender_name !== state.activeProfile?.name) {
@@ -508,7 +636,9 @@ function startSyncLoop() {
                 state.syncClient.lastNotificationId = newest.id;
             }
         }
-    }, CONFIG.POLL_INTERVAL_MS);
+    } finally {
+        pollBusy = false;
+    }
 }
 
 function updateOnlineBadge() {
@@ -651,7 +781,7 @@ function renderTopicsList() {
                 <p style="font-size: 12px; color: var(--text-muted); line-height: 1.4; margin-bottom: 10px;">
                     ${esc(t.text.substring(0, 110))}...
                 </p>
-                <button class="btn btn-primary" style="padding: 6px 12px; font-size: 12px; width: 100%;" onclick="selectSpecificTopic('${t.id}')">
+                <button class="btn btn-primary admin-only" style="padding: 6px 12px; font-size: 12px; width: 100%;" onclick="selectSpecificTopic('${t.id}')">
                     ▶ Practice This Topic
                 </button>
             </div>
@@ -794,7 +924,6 @@ function switchProfile(profileId) {
     const target = state.profiles.find(p => p.id === profileId);
     if (!target) return;
     state.activeProfile = target;
-    state.userRole = target.role;
     saveData();
     renderRoles();
     renderProfiles();
@@ -844,7 +973,6 @@ function deleteProfile(profileId) {
     state.profiles = state.profiles.filter(p => p.id !== profileId);
     if (state.activeProfile?.id === profileId) {
         state.activeProfile = state.profiles[0];
-        state.userRole = state.activeProfile.role;
     }
     saveProfiles();
     saveData();
@@ -860,11 +988,6 @@ function editProfile(profileId) {
         p.name = newName.trim();
         const newBio = prompt("Short Bio / Target:", p.bio || "");
         if (newBio !== null) p.bio = newBio.trim();
-        const roleChoice = confirm("Set role as ADMIN? (Cancel for MEMBER)");
-        p.role = roleChoice ? "ADMIN" : "MEMBER";
-        if (state.activeProfile?.id === p.id) {
-            state.userRole = p.role;
-        }
         saveProfiles();
         saveData();
         renderAll();

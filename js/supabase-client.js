@@ -1,177 +1,104 @@
 /**
- * Supabase & Cloud Real-time Synchronization Client
- * Works directly in browser without displaying keys in student interface.
+ * Supabase client (access-code version)
+ * The website never touches the tables directly. It only calls 4 secured
+ * functions in Supabase, and Supabase decides what each role may do.
  */
 class RealtimeSyncClient {
     constructor() {
-        this.url = localStorage.getItem("b2_supabase_url") || CONFIG.SUPABASE_URL || "";
-        this.key = localStorage.getItem("b2_supabase_key") || CONFIG.SUPABASE_ANON_KEY || "";
-        this.isCloudAvailable = false;
+        this.url = (CONFIG.SUPABASE_URL || "").replace(/\/$/, "");
+        this.key = CONFIG.SUPABASE_ANON_KEY || "";
+        this.token = localStorage.getItem("b2_token") || "";
         this.lastNotificationId = 0;
-        this.pollingTimer = null;
+        this.notifReady = false;
     }
 
     isConfigured() {
-        return (
-            this.url &&
-            this.url.startsWith("http") &&
-            this.key &&
-            !this.url.includes("your-project") &&
-            !this.key.includes("your-anon-key")
-        );
+        return !!(this.url && this.url.startsWith("http") && this.key &&
+            !this.url.includes("your-project") && !this.key.includes("your-anon-key"));
     }
 
-    async testConnection() {
-        if (!this.isConfigured()) {
-            this.isCloudAvailable = false;
-            return false;
-        }
+    async rpc(name, args) {
+        const res = await fetch(`${this.url}/rest/v1/rpc/${name}`, {
+            method: "POST",
+            headers: {
+                apikey: this.key,
+                Authorization: `Bearer ${this.key}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(args)
+        });
+        if (!res.ok) throw new Error("http_" + res.status);
+        return await res.json();
+    }
 
+    clearToken() {
+        this.token = "";
+        localStorage.removeItem("b2_token");
+    }
+
+    // Check an access code. Returns { ok, role } or { ok:false, error }
+    async login(code) {
         try {
-            const cleanUrl = this.url.replace(/\/$/, "");
-            const res = await fetch(`${cleanUrl}/rest/v1/study_sessions?limit=1`, {
-                headers: {
-                    apikey: this.key,
-                    Authorization: `Bearer ${this.key}`
+            const d = await this.rpc("app_login", { p_code: code });
+            if (d && d.token) {
+                this.token = d.token;
+                localStorage.setItem("b2_token", d.token);
+                this.notifReady = false;
+                return { ok: true, role: d.role };
+            }
+            return { ok: false, error: (d && d.error) || "invalid" };
+        } catch (err) {
+            console.warn("login failed:", err);
+            return { ok: false, error: "network" };
+        }
+    }
+
+    // Live room + latest notifications. Returns { ok, role, session, elapsed, notifications }
+    async getState() {
+        try {
+            const d = await this.rpc("app_get_state", { p_token: this.token });
+            if (d && d.error) return { ok: false, error: d.error };
+            return { ok: true, ...d };
+        } catch (err) {
+            return { ok: false, error: "network" };
+        }
+    }
+
+    // Admin only (Supabase rejects anyone else)
+    async setSession(s) {
+        try {
+            return await this.rpc("app_set_session", {
+                p_token: this.token,
+                p: {
+                    admin_name: s.adminName,
+                    topic_id: s.topicId,
+                    topic_title: s.topicTitle,
+                    topic_text: s.topicText,
+                    topic_ar: s.topicAr || "",
+                    role_a: s.roleA,
+                    role_b: s.roleB,
+                    timer_seconds: s.timerSeconds,
+                    is_timer_running: !!s.isTimerRunning
                 }
             });
-            this.isCloudAvailable = res.ok;
-            return res.ok;
         } catch (err) {
-            console.warn("Supabase connection check failed:", err);
-            this.isCloudAvailable = false;
-            return false;
+            console.error("setSession error:", err);
+            return { error: "network" };
         }
     }
 
-    async fetchSession(roomCode) {
-        if (!this.isConfigured()) return null;
+    // Admin only
+    async notify(sender, title, message) {
         try {
-            const cleanUrl = this.url.replace(/\/$/, "");
-            const res = await fetch(`${cleanUrl}/rest/v1/study_sessions?room_code=eq.${encodeURIComponent(roomCode)}&select=*`, {
-                headers: {
-                    apikey: this.key,
-                    Authorization: `Bearer ${this.key}`
-                }
+            return await this.rpc("app_notify", {
+                p_token: this.token,
+                p_sender: sender,
+                p_title: title,
+                p_message: message
             });
-            if (!res.ok) return null;
-            const data = await res.json();
-            return data && data.length > 0 ? data[0] : null;
         } catch (err) {
-            console.error("fetchSession error:", err);
-            return null;
-        }
-    }
-
-    async upsertSession(session) {
-        if (!this.isConfigured()) return false;
-        try {
-            const cleanUrl = this.url.replace(/\/$/, "");
-            const payload = {
-                room_code: session.roomCode,
-                admin_name: session.adminName,
-                topic_id: session.topicId,
-                topic_title: session.topicTitle,
-                topic_text: session.topicText,
-                topic_ar: session.topicAr || "",
-                role_a: session.roleA,
-                role_b: session.roleB,
-                timer_seconds: session.timerSeconds || 300,
-                is_timer_running: !!session.isTimerRunning,
-                last_updated: new Date().toISOString()
-            };
-
-            const res = await fetch(`${cleanUrl}/rest/v1/study_sessions?on_conflict=room_code`, {
-                method: "POST",
-                headers: {
-                    apikey: this.key,
-                    Authorization: `Bearer ${this.key}`,
-                    "Content-Type": "application/json",
-                    Prefer: "resolution=merge-duplicates,return=minimal"
-                },
-                body: JSON.stringify(payload)
-            });
-            return res.ok;
-        } catch (err) {
-            console.error("upsertSession error:", err);
-            return false;
-        }
-    }
-
-    async sendNotification(roomCode, senderName, title, message) {
-        if (!this.isConfigured()) return false;
-        try {
-            const cleanUrl = this.url.replace(/\/$/, "");
-            const payload = {
-                room_code: roomCode,
-                sender_name: senderName,
-                title: title,
-                message: message,
-                created_at: new Date().toISOString()
-            };
-
-            const res = await fetch(`${cleanUrl}/rest/v1/study_notifications`, {
-                method: "POST",
-                headers: {
-                    apikey: this.key,
-                    Authorization: `Bearer ${this.key}`,
-                    "Content-Type": "application/json",
-                    Prefer: "return=minimal"
-                },
-                body: JSON.stringify(payload)
-            });
-            return res.ok;
-        } catch (err) {
-            console.error("sendNotification error:", err);
-            return false;
-        }
-    }
-
-    async fetchRecentNotifications(roomCode) {
-        if (!this.isConfigured()) return [];
-        try {
-            const cleanUrl = this.url.replace(/\/$/, "");
-            const res = await fetch(`${cleanUrl}/rest/v1/study_notifications?room_code=eq.${encodeURIComponent(roomCode)}&order=id.desc&limit=5`, {
-                headers: {
-                    apikey: this.key,
-                    Authorization: `Bearer ${this.key}`
-                }
-            });
-            if (!res.ok) return [];
-            return await res.json();
-        } catch (err) {
-            console.error("fetchRecentNotifications error:", err);
-            return [];
-        }
-    }
-
-    async recordHistory(roomCode, topicId, title, roleA, roleB) {
-        if (!this.isConfigured()) return false;
-        try {
-            const cleanUrl = this.url.replace(/\/$/, "");
-            const payload = {
-                room_code: roomCode,
-                topic_id: topicId,
-                topic_title: title,
-                role_a: roleA,
-                role_b: roleB,
-                created_at: new Date().toISOString()
-            };
-
-            const res = await fetch(`${cleanUrl}/rest/v1/study_history`, {
-                method: "POST",
-                headers: {
-                    apikey: this.key,
-                    Authorization: `Bearer ${this.key}`,
-                    "Content-Type": "application/json",
-                    Prefer: "return=minimal"
-                },
-                body: JSON.stringify(payload)
-            });
-            return res.ok;
-        } catch (err) {
-            console.error("recordHistory error:", err);
-            return false;
+            console.error("notify error:", err);
+            return { error: "network" };
         }
     }
 }

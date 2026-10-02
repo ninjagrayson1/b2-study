@@ -9,7 +9,19 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 </head>
-<body>
+<body class="locked">
+
+<!-- Access code login (nothing else is shown until a valid code is entered) -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-card">
+    <div class="login-icon">🇩🇪</div>
+    <h2>B2 Diskussion</h2>
+    <p>Enter your access code to join the study group.</p>
+    <input type="password" id="loginCodeInput" placeholder="ACCESS CODE" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <div class="login-error" id="loginError"></div>
+    <button class="btn btn-primary btn-lg" id="loginBtn" onclick="submitLogin()">Enter</button>
+  </div>
+</div>
 
 <div class="app-container">
   <!-- Top App Header -->
@@ -33,12 +45,15 @@
       <span class="pill" id="activeUserBadge">Loading user...</span>
 
       <!-- Ring Group Button -->
-      <button class="btn btn-call" onclick="callGroup()" title="Call or Ring Group Members">
+      <button class="btn btn-call admin-only" onclick="callGroup()" title="Call or Ring Group Members">
         📢 Ring Group
       </button>
 
       <!-- Theme Switcher -->
       <button class="btn" id="themeBtn" onclick="toggleTheme()">☀️ Light</button>
+
+      <!-- Logout -->
+      <button class="btn" onclick="logout()" title="Switch code / log out">🔒 Logout</button>
     </div>
   </header>
 
@@ -73,8 +88,7 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
             <h2 style="font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); font-weight: 800;">Assigned Pair</h2>
             <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="font-size: 11px; color: var(--text-muted);">ROOM:</span>
-              <input type="text" id="roomCodeInput" value="B2-STUDY" style="width: 85px; font-size: 12px; font-weight: 800; padding: 2px 6px; background: var(--panel-card); border: 1px solid var(--line); border-radius: 6px; text-align: center;">
+              <span class="pill" id="roleBadge" style="font-size: 11px; font-weight: 800;">—</span>
             </div>
           </div>
 
@@ -105,7 +119,7 @@
           </div>
 
           <!-- Quick Role Switching Buttons -->
-          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 14px;">
+          <div class="admin-only" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 14px;">
             <button class="btn" style="padding: 6px 4px; font-size: 11px;" onclick="swapRoles()">⇄ Swap</button>
             <button class="btn" style="padding: 6px 4px; font-size: 11px;" onclick="changePartner()">👥 Partner</button>
             <button class="btn" style="padding: 6px 4px; font-size: 11px;" onclick="changeBothRoles()">🎲 New Pair</button>
@@ -115,14 +129,14 @@
           <div class="timer-card">
             <div id="timerTitle" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); font-weight: 800;">5-Minute Discussion Timer</div>
             <div class="timer-digits" id="timerDigits">05:00</div>
-            <div class="timer-actions">
+            <div class="timer-actions admin-only">
               <button class="btn btn-primary" id="timerPlayBtn" onclick="startTimer()">▶ Start</button>
               <button class="btn" onclick="resetTimer()">↺ Reset</button>
             </div>
           </div>
 
           <!-- Exam Section Mode Selector for Randomizer -->
-          <div style="margin-bottom: 12px;">
+          <div class="admin-only" style="margin-bottom: 12px;">
             <div style="font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px;">Randomize Section:</div>
             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;">
               <button class="btn" id="modeBtnAll" style="padding: 6px 4px; font-size: 11px; background: var(--accent); color: #fff;" onclick="setExamSection('ALL')">All</button>
@@ -169,7 +183,7 @@
           <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;">
             <button class="btn btn-primary" id="ttsBtn" onclick="readGermanText()">🔊 Read German</button>
             <button class="btn" onclick="stopSpeech()">⏹ Stop Voice</button>
-            <button class="btn" onclick="markWorked()">✓ Mark Worked</button>
+            <button class="btn admin-only" onclick="markWorked()">✓ Mark Worked</button>
             <button class="btn" onclick="highlightSelectedText()" title="Select text with mouse then click to highlight">🖐️ Highlight</button>
           </div>
 
@@ -251,11 +265,9 @@
             <label style="font-size: 12px; font-weight: 700; color: var(--text-muted);">Friend's Name:</label>
             <input type="text" id="newProfileName" class="form-input" placeholder="Friend's name">
           </div>
-          <div>
-            <label style="font-size: 12px; font-weight: 700; color: var(--text-muted);">Role:</label>
+          <div style="display: none;">
             <select id="newProfileRole" class="form-input">
               <option value="MEMBER">Member (Participant)</option>
-              <option value="ADMIN">Admin (Room Leader)</option>
             </select>
           </div>
         </div>
@@ -300,7 +312,7 @@
       <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
           <h2 style="font-size: 18px;">Leaderboard</h2>
-          <button class="btn btn-danger" style="font-size: 12px; padding: 6px 10px;" onclick="if(confirm('Reset all worked topics?')) resetWorkedTopics();">Reset Cycle</button>
+          <button class="btn btn-danger admin-only" style="font-size: 12px; padding: 6px 10px;" onclick="if(confirm('Reset all worked topics?')) resetWorkedTopics();">Reset Cycle</button>
         </div>
         <table style="width: 100%; border-collapse: collapse;">
           <thead>
