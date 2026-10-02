@@ -7,8 +7,8 @@
  */
 const CONFIG = {
     // Supabase Credentials (Fill these in with your Supabase Project details)
-    SUPABASE_URL: "https://your-project.supabase.co",
-    SUPABASE_ANON_KEY: "your-anon-key-here",
+    SUPABASE_URL: "https://kdytnnwheupcfwyfgyyp.supabase.co",
+    SUPABASE_ANON_KEY: "sb_publishable_QNiO_yWEr5ChiDJnRwcx0g_nTRpoblx",
 
     // Default Study Room Code
     DEFAULT_ROOM: "B2-STUDY",
