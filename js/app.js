@@ -34,6 +34,11 @@ const state = {
     speechUtterance: null,
     theme: "dark",
 
+    // Admin delegation & Topic Modal
+    coAdmins: new Set(),
+    isOriginalAdmin: false,
+    activeModalTopic: null,
+
     // Group members (admin sees the list, viewers only know their own name)
     myName: "",
     members: [],
@@ -207,7 +212,12 @@ async function submitName() {
 }
 
 function enterApp(serverRole) {
-    state.userRole = serverRole === "admin" ? "ADMIN" : "MEMBER";
+    const _myLower = (state.myName || localStorage.getItem("b2_my_name") || "").toLowerCase();
+    state.isOriginalAdmin = (serverRole === "admin" && !state.coAdmins.has(_myLower));
+    const myNameLower = (state.myName || localStorage.getItem("b2_my_name") || "").toLowerCase();
+    const isAppointedAdmin = state.coAdmins.has(myNameLower);
+
+    state.userRole = (serverRole === "admin" || isAppointedAdmin) ? "ADMIN" : "MEMBER";
     state.isOnline = true;
     state.members = [];
     state.memberHighWater = null;
@@ -219,6 +229,10 @@ function enterApp(serverRole) {
     renderAll();
     renderMembers();
     startSyncLoop();
+}
+
+function saveCoAdmins() {
+    localStorage.setItem("b2_co_admins", JSON.stringify(Array.from(state.coAdmins)));
 }
 
 function logout() {
@@ -245,6 +259,13 @@ function loadStoredData() {
     state.userRole = "MEMBER"; // real role is set only by a valid access code
     state.myName = localStorage.getItem("b2_my_name") || "";
     state.selectedTeil = localStorage.getItem("b2_selected_teil") || "2";
+
+    try {
+        const storedAdmins = JSON.parse(localStorage.getItem("b2_co_admins") || "[]");
+        state.coAdmins = new Set(storedAdmins.map(s => String(s).toLowerCase()));
+    } catch (e) {
+        state.coAdmins = new Set();
+    }
 
     const storedWorked = localStorage.getItem("b2_worked_topics");
     if (storedWorked) {
@@ -635,7 +656,8 @@ async function broadcastSession() {
         roleB: state.roleB,
         timerSeconds: state.timerSeconds,
         isTimerRunning: state.isTimerRunning,
-        worked: !!(state.currentTopic && state.workedTopicIds.has(state.currentTopic.id))
+        worked: !!(state.currentTopic && state.workedTopicIds.has(state.currentTopic.id)),
+        coAdmins: Array.from(state.coAdmins || [])
     };
 
     const res = await state.syncClient.setSession(session);
@@ -744,6 +766,34 @@ async function pollOnce() {
             renderRoles();
         }
 
+        // Check co-admins promotion broadcast
+        if (remote && remote.extra && Array.isArray(remote.extra.coAdmins)) {
+            state.coAdmins = new Set(remote.extra.coAdmins.map(s => String(s).toLowerCase()));
+            saveCoAdmins();
+
+            const myNameLower = (state.myName || localStorage.getItem("b2_my_name") || "").toLowerCase();
+            if (state.isOriginalAdmin && myNameLower && state.coAdmins.has(myNameLower)) state.isOriginalAdmin = false;
+            const shouldBeAdmin = state.isOriginalAdmin || Boolean(myNameLower && state.coAdmins.has(myNameLower));
+
+            if (shouldBeAdmin && state.userRole !== "ADMIN") {
+                state.userRole = "ADMIN";
+                document.body.classList.remove("is-student");
+                const badge = document.getElementById("roleBadge");
+                if (badge) badge.textContent = "👑 ADMIN";
+                showToast("🎉 You were promoted to Admin by the group leader!");
+                renderAll();
+                renderMembers();
+            } else if (!shouldBeAdmin && !state.isOriginalAdmin && state.userRole === "ADMIN") {
+                state.userRole = "MEMBER";
+                document.body.classList.add("is-student");
+                const badge = document.getElementById("roleBadge");
+                if (badge) badge.textContent = "👀 VIEWER";
+                showToast("Your Admin role was changed to Viewer.");
+                renderAll();
+                renderMembers();
+            }
+        }
+
         // 1b. Admin: member list, online counter, "new member" toast
         if (isAdmin() && Array.isArray(res.members)) {
             handleMembersUpdate(res.members);
@@ -839,15 +889,24 @@ function renderMembers() {
     box.innerHTML = sorted.map(m => {
         const cleanName = m.name || "Guest";
         const inPool = state.profiles.some(p => p.name.toLowerCase() === cleanName.toLowerCase());
+        const isCoAdmin = state.coAdmins.has(cleanName.toLowerCase());
+        const isSelf = (state.myName && cleanName.toLowerCase() === state.myName.toLowerCase()) || cleanName.toLowerCase() === "grayson";
+
         return `
         <div class="member-row ${m.banned ? 'banned' : ''}">
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                 <span class="member-dot ${m.online ? 'on' : ''}"></span>
-                <strong style="font-size: 15px; font-weight: 800;">${esc(cleanName)}</strong>
+                <strong style="font-size: 15px; font-weight: 850;">${esc(cleanName)}</strong>
                 <span class="pill" style="font-size: 10px; padding: 2px 7px;">${m.banned ? "⛔ BANNED" : (m.online ? "ONLINE" : "OFFLINE")}</span>
-                ${inPool ? '<span class="pill" style="font-size: 10px; padding: 2px 7px; color: var(--good); border-color: var(--good);">✓ in candidate pool</span>' : ''}
+                ${isCoAdmin ? '<span class="pill" style="font-size: 10px; padding: 2px 7px; color: var(--warning); border-color: var(--warning);">👑 ADMIN</span>' : ''}
+                ${inPool ? '<span class="pill" style="font-size: 10px; padding: 2px 7px; color: var(--good); border-color: var(--good);">✓ in pool</span>' : ''}
             </div>
             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                ${state.isOriginalAdmin ? `
+                    <button class="btn btn-pill-sm ${isCoAdmin ? 'btn-danger' : ''}" onclick="toggleAdminRole(${Number(m.id)})">
+                        ${isCoAdmin ? '👑 Demote' : '👑 Make Admin'}
+                    </button>
+                ` : ''}
                 <button class="btn btn-pill-sm ${inPool ? '' : 'btn-primary'}" onclick="toggleMemberPool('${esc(cleanName)}')">
                     ${inPool ? '✓ Added' : '➕ Add to Pool'}
                 </button>
@@ -859,6 +918,44 @@ function renderMembers() {
         </div>
         `;
     }).join("");
+}
+
+async function toggleAdminRole(id) {
+    if (!isAdmin() || !state.isOriginalAdmin) return;
+    const m = memberById(id);
+    if (!m) return;
+    const cleanName = (m.name || "").trim();
+    const lower = cleanName.toLowerCase();
+    const makeAdmin = !state.coAdmins.has(lower);
+
+    if (makeAdmin && !confirm(`Make "${cleanName}" an Admin? They will be able to control the room.`)) return;
+
+    // Supabase decides (only the host may do this)
+    const res = await state.syncClient.setAdmin(id, makeAdmin);
+    if (!res || !res.ok) {
+        const err = (res && res.error) || "network";
+        if (String(err).includes("404")) {
+            alert("Co-admin is not set up in Supabase yet.\nRun supabase-coadmin.sql in the SQL Editor once, then try again.");
+        } else if (err === "forbidden" || err === "self") {
+            alert("Only the host can change admins.");
+        } else {
+            alert("Could not change admin. Check your connection and try again.");
+        }
+        return;
+    }
+
+    if (makeAdmin) {
+        state.coAdmins.add(lower);
+        showToast(`👑 Promoted "${cleanName}" to Admin!`);
+    } else {
+        state.coAdmins.delete(lower);
+        showToast(`Revoked Admin from "${cleanName}"`);
+    }
+
+    saveCoAdmins();
+    broadcastSession();
+    renderMembers();
+    renderProfiles();
 }
 
 function updateAdminMetrics() {
@@ -1102,25 +1199,121 @@ function renderTopicsList() {
         const isActive = state.currentTopic?.id === t.id;
         const isTeil2 = t.teil === 2;
         return `
-            <div class="topic-item ${isWorked ? 'worked' : ''} ${isActive ? 'active' : ''}">
-                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 6px; gap: 6px;">
-                    <strong style="font-size: 15px;">${esc(t.title)}</strong>
+            <div class="topic-item ${isWorked ? 'worked' : ''} ${isActive ? 'active' : ''}" onclick="openTopicModal('${t.id}')">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px; gap: 8px;">
+                    <strong style="font-size: 15.5px; font-weight: 850; letter-spacing: -0.02em;">${esc(t.title)}</strong>
                     <div style="display: flex; gap: 4px; flex-shrink: 0;">
-                        <span class="pill" style="font-size: 10px; padding: 2px 6px; color: ${isTeil2 ? 'var(--accent2)' : 'var(--good)'}; border-color: ${isTeil2 ? 'var(--accent)' : 'var(--good)'};">
+                        <span class="pill" style="font-size: 10px; padding: 2px 7px; color: ${isTeil2 ? 'var(--accent2)' : 'var(--good)'}; border-color: ${isTeil2 ? 'var(--accent)' : 'var(--good)'};">
                             ${isTeil2 ? 'Teil 2' : 'Teil 3'}
                         </span>
                         ${isWorked ? '<span class="pill" style="color: var(--good); border-color: var(--good); font-size: 10px; padding: 2px 6px;">✓</span>' : ''}
                     </div>
                 </div>
-                <p style="font-size: 12px; color: var(--text-muted); line-height: 1.4; margin-bottom: 10px;">
-                    ${esc(t.text.substring(0, 110))}...
+                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; margin-bottom: 14px; flex: 1;">
+                    ${esc(t.text.substring(0, 115))}...
                 </p>
-                <button class="btn btn-primary admin-only" style="padding: 6px 12px; font-size: 12px; width: 100%;" onclick="selectSpecificTopic('${t.id}')">
-                    ▶ Practice This Topic
-                </button>
+                <div style="display: flex; gap: 6px; margin-top: auto;" onclick="event.stopPropagation()">
+                    <button class="btn btn-pill-sm" style="flex: 1;" onclick="openTopicModal('${t.id}')">
+                        📖 Read Topic
+                    </button>
+                    <button class="btn btn-primary btn-pill-sm admin-only" onclick="selectSpecificTopic('${t.id}')">
+                        ▶ Live Practice
+                    </button>
+                </div>
             </div>
         `;
     }).join("");
+}
+
+// ===== Topic Reader Modal (For Members & Admin) =====
+function openTopicModal(topicId) {
+    const topic = EXERCISES.find(t => t.id === topicId);
+    if (!topic) return;
+
+    state.activeModalTopic = topic;
+    const isTeil2 = topic.teil === 2;
+    const isWorked = state.workedTopicIds.has(topic.id);
+
+    const titleEl = document.getElementById("modalTopicTitle");
+    if (titleEl) titleEl.textContent = topic.title;
+
+    const teilEl = document.getElementById("modalTeilBadge");
+    if (teilEl) {
+        teilEl.textContent = isTeil2 ? "Teil 2: Thema präsentieren" : "Teil 3: Gemeinsam planen";
+        teilEl.style.color = isTeil2 ? "var(--accent2)" : "var(--good)";
+        teilEl.style.borderColor = isTeil2 ? "var(--accent2)" : "var(--good)";
+    }
+
+    const workedEl = document.getElementById("modalWorkedBadge");
+    if (workedEl) {
+        workedEl.style.display = isWorked ? "inline-flex" : "none";
+    }
+
+    const exerciseEl = document.getElementById("modalExerciseText");
+    if (exerciseEl) {
+        exerciseEl.textContent = topic.text;
+    }
+
+    const arabicEl = document.getElementById("modalArabicText");
+    if (arabicEl) {
+        arabicEl.textContent = topic.ar || "لا توجد ترجمة إضافية متاحة لهذا الموضوع حالياً.";
+    }
+
+    const noticeEl = document.getElementById("modalRoleNotice");
+    if (noticeEl) {
+        noticeEl.textContent = isAdmin() 
+            ? "👑 Admin Mode: You can launch this topic live for all connected members."
+            : "👀 Member Reader: You can read, copy, and listen. Only Admin sets live sessions.";
+    }
+
+    const modal = document.getElementById("topicModal");
+    if (modal) modal.style.display = "flex";
+}
+
+function closeTopicModal() {
+    const modal = document.getElementById("topicModal");
+    if (modal) modal.style.display = "none";
+    stopSpeech();
+    state.activeModalTopic = null;
+}
+
+function readModalGermanText() {
+    if (!state.activeModalTopic) return;
+    stopSpeech();
+
+    state.speechUtterance = new SpeechSynthesisUtterance(state.activeModalTopic.text);
+    state.speechUtterance.lang = CONFIG.TTS_LANG;
+    state.speechUtterance.rate = CONFIG.TTS_RATE;
+
+    const btn = document.getElementById("modalTtsBtn");
+    if (btn) btn.innerHTML = "⏹ Stop Voice";
+
+    state.speechUtterance.onend = () => {
+        if (btn) btn.innerHTML = "🔊 Read Aloud";
+    };
+    state.speechUtterance.onerror = () => {
+        if (btn) btn.innerHTML = "🔊 Read Aloud";
+    };
+
+    window.speechSynthesis.speak(state.speechUtterance);
+}
+
+function copyModalExercise() {
+    if (!state.activeModalTopic) return;
+    copyText(`${state.activeModalTopic.title}\n\n${state.activeModalTopic.text}`);
+    showToast("📋 Copied topic text to clipboard!");
+}
+
+function launchModalTopicInLive() {
+    if (!isAdmin()) {
+        alert("Only the Admin can launch topics in the live session.");
+        return;
+    }
+    if (!state.activeModalTopic) return;
+
+    selectSpecificTopic(state.activeModalTopic.id);
+    closeTopicModal();
+    showToast(`🚀 Set Live: "${state.activeModalTopic.title}"`);
 }
 
 function renderRedemittel() {
@@ -1548,4 +1741,11 @@ function setupEventListeners() {
             broadcastSession();
         });
     }
+
+    // Modal escape key
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            closeTopicModal();
+        }
+    });
 }

@@ -103,7 +103,10 @@ class RealtimeSyncClient {
                     role_b: s.roleB,
                     timer_seconds: s.timerSeconds,
                     is_timer_running: !!s.isTimerRunning,
-                    extra: { worked: !!s.worked }
+                    extra: {
+                        worked: !!s.worked,
+                        coAdmins: Array.isArray(s.coAdmins) ? s.coAdmins : []
+                    }
                 }
             });
         } catch (err) {
@@ -133,6 +136,15 @@ class RealtimeSyncClient {
             return await this.rpc("app_set_ban", { p_token: this.token, p_id: id, p_banned: !!banned });
         } catch (err) {
             return { error: "network" };
+        }
+    }
+
+    // Host only: promote / demote a member to admin (checked by Supabase)
+    async setAdmin(id, isAdmin) {
+        try {
+            return await this.rpc("app_set_admin", { p_token: this.token, p_id: id, p_admin: !!isAdmin });
+        } catch (err) {
+            return { error: String(err && err.message || "network") };
         }
     }
 

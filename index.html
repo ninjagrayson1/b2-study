@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>B2 Diskussion · Real-Time Study Group (Teil 2 & Teil 3)</title>
-  <link rel="stylesheet" href="css/style.css?v=6">
+  <link rel="stylesheet" href="css/style.css?v=7">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -302,7 +302,18 @@
       </div>
     </div>
 
-    <!-- Live members who entered with the B2-grp code -->
+    <!-- Admin info (no access codes here: this file is public) -->
+    <div class="card" style="margin-bottom: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+        <h2 style="font-size: 19px; font-weight: 850;">&#128081; Admin Controls</h2>
+        <span class="pill" style="font-size: 11px; color: var(--accent2); border-color: var(--accent2);">Leader Access</span>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted);">
+        Use <b>Make Admin</b> next to any member below to promote them. Room codes are kept private.
+      </p>
+    </div>
+
+    <!-- Live members who entered with the group code -->
     <div class="card" style="margin-bottom: 20px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
         <h2 style="font-size: 20px;">👥 Group Members (live)</h2>
@@ -404,11 +415,52 @@
   </section>
 </div>
 
+<!-- ================= TOPIC READER MODAL ================= -->
+<div class="modal-overlay" id="topicModal" style="display: none;" onclick="if(event.target === this) closeTopicModal()">
+  <div class="modal-content glass-modal">
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+        <span id="modalTeilBadge" class="pill" style="font-size: 11px; font-weight: 800;">Teil 2</span>
+        <span id="modalWorkedBadge" class="pill" style="color: var(--good); border-color: var(--good); font-size: 11px; display: none;">✓ Worked</span>
+      </div>
+      <button class="modal-close-btn" onclick="closeTopicModal()" title="Close (Esc)">✕</button>
+    </div>
+
+    <div class="modal-body">
+      <h2 id="modalTopicTitle" style="font-size: clamp(20px, 3.2vw, 26px); font-weight: 850; letter-spacing: -0.03em; margin-bottom: 14px; line-height: 1.25;">
+        Topic Title
+      </h2>
+
+      <!-- Action Bar inside Modal -->
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;">
+        <button class="btn btn-primary btn-pill-sm" id="modalTtsBtn" onclick="readModalGermanText()">🔊 Read Aloud</button>
+        <button class="btn btn-pill-sm" onclick="stopSpeech()">⏹ Stop Voice</button>
+        <button class="btn btn-pill-sm" onclick="copyModalExercise()">📋 Copy Text</button>
+        <button class="btn btn-primary btn-pill-sm admin-only" id="modalLaunchBtn" onclick="launchModalTopicInLive()">▶ Set as Live Practice</button>
+      </div>
+
+      <!-- Full German Exercise Text -->
+      <div class="modal-exercise-box" id="modalExerciseText"></div>
+
+      <!-- Arabic Translation & Summary -->
+      <div class="arabic-box" id="modalArabicBox" style="margin-top: 14px;">
+        <div style="font-size: 11px; color: var(--accent2); margin-bottom: 6px; font-weight: 700;">الترجمة والملخص بالعربية · Arabic Summary:</div>
+        <div id="modalArabicText"></div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <span style="font-size: 12px; color: var(--text-muted);" id="modalRoleNotice">👀 Member Reader · Only Admin can set Live Practice</span>
+      <button class="btn btn-pill-sm" onclick="closeTopicModal()">✕ Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Scripts -->
 <script src="js/config.js?v=3"></script>
 <script src="js/topics.js?v=3"></script>
 <script src="js/redemittel.js?v=3"></script>
-<script src="js/supabase-client.js?v=3"></script>
-<script src="js/app.js?v=6"></script>
+<script src="js/supabase-client.js?v=7"></script>
+<script src="js/app.js?v=7"></script>
 </body>
 </html>
